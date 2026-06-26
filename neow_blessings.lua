@@ -177,7 +177,7 @@ function SMODS.INIT.NeowBlessings()
             key = "common_mult_joker",
             desc = "Get a common mult Joker",
             f = function()
-                create_joker("Mult", 0)
+                neow_create_joker("Mult", 0)
                 G.FUNCS:exit_overlay_menu()
             end
         },
@@ -185,7 +185,7 @@ function SMODS.INIT.NeowBlessings()
             key = "common_chips_joker",
             desc = "Get a common chips Joker",
             f = function()
-                create_joker("Chips", 0)
+                neow_create_joker("Chips", 0)
                 G.FUNCS:exit_overlay_menu()
             end
         },
@@ -193,7 +193,7 @@ function SMODS.INIT.NeowBlessings()
             key = "uncommon_joker",
             desc = "Get an uncommon Joker",
             f = function()
-                create_joker(nil, 0.8)  -- (rarity > 0.95 and 3) or (rarity > 0.7 and 2) or 1
+                neow_create_joker(nil, 0.8)  -- (rarity > 0.95 and 3) or (rarity > 0.7 and 2) or 1
                 G.FUNCS:exit_overlay_menu()
             end
         },
@@ -297,7 +297,7 @@ function SMODS.INIT.NeowBlessings()
                 "2 Joker cards"
         },  
     }
-    function create_joker(effect, rarity)
+    function neow_create_joker(effect, rarity)
         pool, pool_key = get_current_pool('Joker', rarity)
         choices = {}
         for k,v in pairs(pool) do
