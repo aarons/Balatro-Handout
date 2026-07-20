@@ -120,6 +120,7 @@ local function resolve_blessings()
         blessings[#blessings + 1] = {
             label = { center_name(G.P_CENTERS[joker_key]) },
             colour = G.C.RED,
+            center = G.P_CENTERS[joker_key],
             f = function() add_joker(joker_key) end
         }
     end
@@ -128,6 +129,7 @@ local function resolve_blessings()
         blessings[#blessings + 1] = {
             label = { center_name(booster) },
             colour = G.C.BOOSTER,
+            center = booster,
             f = function() open_booster(booster) end
         }
     end
@@ -136,6 +138,7 @@ local function resolve_blessings()
         blessings[#blessings + 1] = {
             label = { center_name(G.P_CENTERS[voucher_key]) .. ' ' .. localize('nb_voucher') },
             colour = G.C.SECONDARY_SET.Voucher,
+            center = G.P_CENTERS[voucher_key],
             f = function() redeem_voucher(G.P_CENTERS[voucher_key]) end
         }
     end
@@ -174,9 +177,13 @@ local function create_blessings_overlay()
             blessing.f()
             G.FUNCS:exit_overlay_menu()
         end
-        buttons[i] = {n = G.UIT.R, config = { align = "cm", padding = 0.1 }, nodes = {
-            UIBox_button { id = 'neow_blessing_' .. i, label = blessing.label, button = 'neow_blessing_' .. i, minw = 8, colour = blessing.colour }
-        }}
+        local button = UIBox_button { id = 'neow_blessing_' .. i, label = blessing.label, button = 'neow_blessing_' .. i, minw = 8, colour = blessing.colour }
+        -- Hovering the button shows the game's own description popup for the
+        -- rolled center, exactly like the tooltips on card-description links
+        if blessing.center then
+            button.nodes[1].config.detailed_tooltip = blessing.center
+        end
+        buttons[i] = {n = G.UIT.R, config = { align = "cm", padding = 0.1 }, nodes = { button }}
     end
 
     G.FUNCS.overlay_menu {
