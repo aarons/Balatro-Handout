@@ -15,6 +15,9 @@ SMODS.Atlas {
 -- Stand-in center for the Neow character card shown on the blessing screen.
 -- Not registered as a real Joker so it can never enter any pool.
 local j_neow = {
+    -- key must be 'c_base' so SMODS.get_enhancements treats this card as
+    -- unenhanced; any other value (including nil) crashes enhancement lookups
+    key = 'c_base',
     order = 151, unlocked = true, start_alerted = true, discovered = true,
     blueprint_compat = true, eternal_compat = true, rarity = 1, cost = 2,
     name = "neow", pos = { x = 0, y = 0 }, set = "Default", effect = "Base",
