@@ -1,25 +1,22 @@
 # Neow Blessings
 Neow has transformed into a cute little card! This is a mod for balatro that gives you 4 blessings at the start of your run, inspired from Slay the Spire.
 
-Requires [Steamodded](https://github.com/Steamopollys/Steamodded).
+Requires [Steamodded](https://github.com/Steamodded/smods) 1.0 or later.
 
 # Install guide
 
 Download the whole repo as a .zip file and un-zip it in your mods folder. More information in the Steamodded link above.
 
-# Blessings list (WIP)
+# Blessings
 
-Note that this list is just an initial stub, any feedback on balance changes, possible additions or removals are very welcome! Feel free to make a pull request.
+At the start of every run, Neow offers 4 blessings. The options are resolved up front, so you see exactly what you're choosing:
 
-- Get a common mult Joker
-- Get a common chips Joker
-- Get an uncommon Joker
-- Get $10
-- Open a Mega Arcana pack
-- Open a Mega Celestial pack
-- Open a Spectral pack
-- Open a Mega Standard pack
-- Open a Jumbo Buffoon pack
+- **Get $10**
+- **A random Joker** — rolled from the full joker pool with rarity odds respected, e.g. "Burnt Joker"
+- **A random Booster pack** — any pack in the game, weighted like the shop, e.g. "Mega Arcana Pack"
+- **A random Voucher** — redeemed immediately, e.g. "Clearance Sale Voucher"
+
+The pools are read from the live game registries at run start, so content from other Steamodded mods — jokers (including modded rarities like Epic), booster packs, and vouchers — appears automatically. Legendary jokers are excluded, as they only spawn through the Soul.
 
 # Future development
 - Make a better card for Neow
@@ -34,6 +31,7 @@ Note that this list is just an initial stub, any feedback on balance changes, po
 - [Better Stakes](https://github.com/kjossul/BetterStakes) - A mod for balatro that changes orange and gold stakes, making them easier and reducing the need to reset for a good start.
 
 # Changelog
+- 2.0.0: Migrated to modern Steamodded (1.0+). Blessings are now fully dynamic: always $10, a random Joker (modded rarities supported), a random Booster pack, and a random Voucher, all drawn from the live pools including other mods' content. Removed the hardcoded joker effects table and curated pack list.
 - New feat: Tooltips for blessings options that contain extra information or descriptions
 - Neow speech bubble bugfix.
 - Initial commit.

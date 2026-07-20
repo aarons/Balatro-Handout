@@ -1,0 +1,11 @@
+{
+    "id": "NeowBlessings",
+    "name": "Neow Blessings",
+    "author": ["kjossul", "typhoonbro", "Aaron Scott"],
+    "description": "Choose between 4 blessings at the start of your run, inspired from Slay the Spire.",
+    "prefix": "neow",
+    "main_file": "neow_blessings.lua",
+    "priority": 100,
+    "version": "2.0.0",
+    "dependencies": ["Steamodded (>=1.0.0~ALPHA-0812d)"]
+}
