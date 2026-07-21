@@ -5,6 +5,24 @@
 
 sendDebugMessage("Loaded NeowBlessings~")
 
+-- Live config table: defaults come from config.lua, user changes are made in
+-- the Mods > Neow Blessings > Config tab and persisted by Steamodded.
+local config = SMODS.current_mod.config
+
+SMODS.current_mod.config_tab = function()
+    return {n = G.UIT.ROOT, config = { align = "cm", padding = 0.05, colour = G.C.CLEAR }, nodes = {
+        {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
+            create_toggle { label = localize('nb_uniform_joker'), ref_table = config, ref_value = 'uniform_joker' },
+        }},
+        {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
+            create_toggle { label = localize('nb_uniform_booster'), ref_table = config, ref_value = 'uniform_booster' },
+        }},
+        {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
+            create_toggle { label = localize('nb_uniform_consumable'), ref_table = config, ref_value = 'uniform_consumable' },
+        }},
+    }}
+end
+
 SMODS.Atlas {
     key = 'jimbo',
     path = 'j_neow.png',
@@ -42,9 +60,21 @@ local function pool_choices(_type, _rarity)
     return choices
 end
 
--- With no rarity argument, Steamodded's get_current_pool polls the rarity
--- itself via SMODS.poll_rarity, respecting modded rarities and their weights.
+-- Weighted: with no rarity argument, Steamodded's get_current_pool polls the
+-- rarity itself via SMODS.poll_rarity, respecting modded rarities and their
+-- weights. Uniform: every poolable joker has equal odds regardless of rarity
+-- (legendaries stay excluded — they only spawn through the Soul).
 local function poll_joker()
+    if config.uniform_joker then
+        local choices = {}
+        for _, v in ipairs(G.P_CENTER_POOLS.Joker) do
+            if v.unlocked ~= false and not v.demo and not v.hidden and v.rarity ~= 4
+                and not G.GAME.banned_keys[v.key] and not G.GAME.used_jokers[v.key] then
+                choices[#choices + 1] = v.key
+            end
+        end
+        return pseudorandom_element(choices, pseudoseed('neow_joker'))
+    end
     return pseudorandom_element(pool_choices('Joker'), pseudoseed('neow_joker'))
 end
 
@@ -52,22 +82,46 @@ local function poll_voucher()
     return pseudorandom_element(pool_choices('Voucher'), pseudoseed('neow_voucher'))
 end
 
--- Uniform roll over every consumable currently poolable in any consumable
--- type (Tarot, Planet, Spectral, plus modded types via SMODS.ConsumableType).
--- Types are sorted so the roll stays deterministic for a given seed.
+-- Rolls over every consumable type (Tarot, Planet, Spectral, plus modded
+-- types via SMODS.ConsumableType). Types are sorted so the roll stays
+-- deterministic for a given seed. Uniform: one flat pool, equal odds for
+-- every card. Weighted: type picked by its shop rate (Spectral is rate 0
+-- outside the Ghost deck, matching the shop), then uniform within the type.
 local function poll_consumable()
     local types = {}
     for key in pairs(SMODS.ConsumableType.obj_table) do types[#types + 1] = key end
     table.sort(types)
-    local choices = {}
-    for _, _type in ipairs(types) do
-        for _, key in ipairs(pool_choices(_type)) do choices[#choices + 1] = key end
+    if config.uniform_consumable then
+        local choices = {}
+        for _, _type in ipairs(types) do
+            for _, key in ipairs(pool_choices(_type)) do choices[#choices + 1] = key end
+        end
+        return pseudorandom_element(choices, pseudoseed('neow_consumable'))
     end
-    return pseudorandom_element(choices, pseudoseed('neow_consumable'))
+    local pool, cume = {}, 0
+    for _, _type in ipairs(types) do
+        local rate = G.GAME[_type:lower() .. '_rate'] or 0
+        if rate > 0 then
+            local choices = pool_choices(_type)
+            if #choices > 0 then
+                cume = cume + rate
+                pool[#pool + 1] = { choices = choices, cume = cume }
+            end
+        end
+    end
+    if cume == 0 then return nil end
+    local poll = pseudorandom(pseudoseed('neow_consumable_type')) * cume
+    for _, entry in ipairs(pool) do
+        if poll <= entry.cume then
+            return pseudorandom_element(entry.choices, pseudoseed('neow_consumable'))
+        end
+    end
 end
 
--- Weighted roll over every registered booster pack, vanilla and modded.
--- Mirrors get_pack() without its guaranteed first-shop Buffoon pack.
+-- Roll over every registered booster pack, vanilla and modded. Weighted
+-- mirrors get_pack() without its guaranteed first-shop Buffoon pack; uniform
+-- gives every pack equal odds (zero-weight packs stay excluded — mods use
+-- weight 0 to disable a pack).
 local function poll_booster()
     local pool, cume = {}, 0
     for _, v in ipairs(G.P_CENTER_POOLS.Booster) do
@@ -78,6 +132,10 @@ local function poll_booster()
                 pool[#pool + 1] = { center = v, cume = cume }
             end
         end
+    end
+    if config.uniform_booster then
+        local entry = pseudorandom_element(pool, pseudoseed('neow_pack'))
+        return entry and entry.center
     end
     local poll = pseudorandom(pseudoseed('neow_pack')) * cume
     for _, entry in ipairs(pool) do

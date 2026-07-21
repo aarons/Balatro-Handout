@@ -18,6 +18,14 @@ At the start of every run, Neow offers 5 blessings. The options are resolved up 
 
 The pools are read from the live game registries at run start, so content from other Steamodded mods — jokers (including modded rarities like Epic), booster packs, vouchers, and consumables — appears automatically. Legendary jokers are excluded, as they only spawn through the Soul.
 
+## Configuration
+
+Each random award can roll **weighted** (mirroring the game's own rarity/shop weights) or **uniform** (every poolable option has equal odds). Toggle these in **Mods > Neow Blessings > Config**; changes apply from the next run. Defaults:
+
+- Joker: weighted (rarity odds respected)
+- Booster pack: weighted (shop weights)
+- Consumable: uniform — note that in weighted mode, Spectral cards match the shop rate, which is 0 outside the Ghost deck
+
 ## Install guide
 
 Requires [Steamodded](https://github.com/Steamodded/smods) 1.0 or later.
