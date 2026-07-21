@@ -6,16 +6,17 @@ I wanted something with more randomized rewards, but also more consistent catego
 
 ## Blessings
 
-Neow has transformed into a cute little card! This is a mod for balatro that gives you 4 blessings at the start of your run, inspired from Slay the Spire.
+Neow has transformed into a cute little card! This is a mod for balatro that gives you 5 blessings at the start of your run, inspired from Slay the Spire.
 
-At the start of every run, Neow offers 4 blessings. The options are resolved up front, so you see exactly what you're choosing:
+At the start of every run, Neow offers 5 blessings. The options are resolved up front, so you see exactly what you're choosing:
 
 - **Get $10**
+- **A random Consumable** — a Tarot, Planet, or Spectral card (or any modded consumable type), added to your consumables area
 - **A random Joker** — rolled from the full joker pool with rarity odds respected, e.g. "Burnt Joker"
 - **A random Booster pack** — any pack in the game, weighted like the shop, e.g. "Mega Arcana Pack"
 - **A random Voucher** — redeemed immediately, e.g. "Clearance Sale Voucher"
 
-The pools are read from the live game registries at run start, so content from other Steamodded mods — jokers (including modded rarities like Epic), booster packs, and vouchers — appears automatically. Legendary jokers are excluded, as they only spawn through the Soul.
+The pools are read from the live game registries at run start, so content from other Steamodded mods — jokers (including modded rarities like Epic), booster packs, vouchers, and consumables — appears automatically. Legendary jokers are excluded, as they only spawn through the Soul.
 
 ## Install guide
 

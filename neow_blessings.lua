@@ -52,6 +52,20 @@ local function poll_voucher()
     return pseudorandom_element(pool_choices('Voucher'), pseudoseed('neow_voucher'))
 end
 
+-- Uniform roll over every consumable currently poolable in any consumable
+-- type (Tarot, Planet, Spectral, plus modded types via SMODS.ConsumableType).
+-- Types are sorted so the roll stays deterministic for a given seed.
+local function poll_consumable()
+    local types = {}
+    for key in pairs(SMODS.ConsumableType.obj_table) do types[#types + 1] = key end
+    table.sort(types)
+    local choices = {}
+    for _, _type in ipairs(types) do
+        for _, key in ipairs(pool_choices(_type)) do choices[#choices + 1] = key end
+    end
+    return pseudorandom_element(choices, pseudoseed('neow_consumable'))
+end
+
 -- Weighted roll over every registered booster pack, vanilla and modded.
 -- Mirrors get_pack() without its guaranteed first-shop Buffoon pack.
 local function poll_booster()
@@ -73,6 +87,15 @@ end
 
 local function add_joker(key)
     local card = SMODS.add_card { set = 'Joker', key = key }
+    if card then
+        card:start_materialize()
+        G.GAME.used_jokers[key] = true
+    end
+end
+
+local function add_consumable(key)
+    local center = G.P_CENTERS[key]
+    local card = SMODS.add_card { set = center.set, key = key }
     if card then
         card:start_materialize()
         G.GAME.used_jokers[key] = true
@@ -115,6 +138,16 @@ local function resolve_blessings()
             f = function() ease_dollars(10) end
         },
     }
+    local consumable_key = poll_consumable()
+    if consumable_key then
+        local center = G.P_CENTERS[consumable_key]
+        blessings[#blessings + 1] = {
+            label = { center_name(center) },
+            colour = G.C.SECONDARY_SET[center.set] or G.C.PURPLE,
+            center = center,
+            f = function() add_consumable(consumable_key) end
+        }
+    end
     local joker_key = poll_joker()
     if joker_key then
         blessings[#blessings + 1] = {
@@ -179,8 +212,11 @@ local function create_blessings_overlay()
         end
         local button = UIBox_button { id = 'neow_blessing_' .. i, label = blessing.label, button = 'neow_blessing_' .. i, minw = 8, colour = blessing.colour }
         -- Hovering the button shows the game's own description popup for the
-        -- rolled center, exactly like the tooltips on card-description links
-        if blessing.center then
+        -- rolled center, exactly like the tooltips on card-description links.
+        -- Dry-run the tooltip first: it is generated without a real Card, and
+        -- some mods' loc_vars index Card-only fields (e.g. card.config.center
+        -- in Pokermon's pocket packs) and would crash the game on hover.
+        if blessing.center and pcall(create_UIBox_detailed_tooltip, blessing.center) then
             button.nodes[1].config.detailed_tooltip = blessing.center
         end
         buttons[i] = {n = G.UIT.R, config = { align = "cm", padding = 0.1 }, nodes = { button }}
