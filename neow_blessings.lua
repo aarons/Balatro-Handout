@@ -78,8 +78,27 @@ local function poll_joker()
     return pseudorandom_element(pool_choices('Joker'), pseudoseed('neow_joker'))
 end
 
+-- The shop pool (get_current_pool) at run start contains only base-tier
+-- vouchers — upgraded tiers are unavailable until their prerequisite is
+-- redeemed — and it's the same pool the ante-1 shop draws from. Roll over
+-- the full voucher registry instead, and exclude whatever the first shop
+-- has already queued so the blessing never duplicates it.
 local function poll_voucher()
-    return pseudorandom_element(pool_choices('Voucher'), pseudoseed('neow_voucher'))
+    local queued = {}
+    local shop = G.GAME.current_round and G.GAME.current_round.voucher
+    if type(shop) == 'string' then
+        queued[shop] = true
+    elseif type(shop) == 'table' then
+        for _, key in ipairs(shop) do queued[key] = true end
+    end
+    local choices = {}
+    for _, v in ipairs(G.P_CENTER_POOLS.Voucher) do
+        if v.unlocked ~= false and not G.GAME.banned_keys[v.key]
+            and not G.GAME.used_vouchers[v.key] and not queued[v.key] then
+            choices[#choices + 1] = v.key
+        end
+    end
+    return pseudorandom_element(choices, pseudoseed('neow_voucher'))
 end
 
 -- Rolls over every consumable type (Tarot, Planet, Spectral, plus modded
