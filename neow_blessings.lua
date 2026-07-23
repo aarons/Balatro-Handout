@@ -9,18 +9,41 @@ sendDebugMessage("Loaded NeowBlessings~")
 -- the Mods > Neow Blessings > Config tab and persisted by Steamodded.
 local config = SMODS.current_mod.config
 
+-- The 5 blessing slots each hold one of these types. Indices are what
+-- config.slot_type_N stores, so this order must never be reshuffled.
+local TYPE_KEYS = { 'none', 'money', 'consumable', 'joker', 'booster', 'voucher', 'random' }
+-- 'random' resolves to one of these at run start; 'none' is excluded.
+local RANDOM_TYPES = { 'money', 'consumable', 'joker', 'booster', 'voucher' }
+
+G.FUNCS.nb_slot_type = function(args)
+    config['slot_type_' .. args.cycle_config.nb_slot] = args.to_key
+end
+
 SMODS.current_mod.config_tab = function()
-    return {n = G.UIT.ROOT, config = { align = "cm", padding = 0.05, colour = G.C.CLEAR }, nodes = {
-        {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
-            create_toggle { label = localize('nb_uniform_joker'), ref_table = config, ref_value = 'uniform_joker' },
-        }},
-        {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
-            create_toggle { label = localize('nb_uniform_booster'), ref_table = config, ref_value = 'uniform_booster' },
-        }},
-        {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
-            create_toggle { label = localize('nb_uniform_consumable'), ref_table = config, ref_value = 'uniform_consumable' },
-        }},
+    local type_names = {}
+    for i, key in ipairs(TYPE_KEYS) do type_names[i] = localize('nb_type_' .. key) end
+    local rows = {}
+    for i = 1, 5 do
+        rows[#rows + 1] = {n = G.UIT.R, config = { align = "cm", padding = 0.03 }, nodes = {
+            {n = G.UIT.C, config = { align = "cm", minw = 4.5 }, nodes = {
+                create_option_cycle {
+                    label = localize('nb_blessing') .. ' ' .. i,
+                    options = type_names,
+                    current_option = config['slot_type_' .. i] or 1,
+                    opt_callback = 'nb_slot_type',
+                    nb_slot = i,
+                    w = 3.2, scale = 0.7, colour = G.C.RED,
+                },
+            }},
+            {n = G.UIT.C, config = { align = "cm", minw = 3 }, nodes = {
+                create_toggle { label = localize('nb_uniform'), ref_table = config, ref_value = 'slot_uniform_' .. i },
+            }},
+        }}
+    end
+    rows[#rows + 1] = {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
+        {n = G.UIT.T, config = { text = localize('nb_uniform_info'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT }},
     }}
+    return {n = G.UIT.ROOT, config = { align = "cm", padding = 0.05, colour = G.C.CLEAR }, nodes = rows}
 end
 
 SMODS.Atlas {
@@ -50,12 +73,16 @@ local function center_name(center)
     return center.name or center.key
 end
 
+-- Every poller takes a seed (unique per slot, so two slots of the same type
+-- roll independently) and an exclude set of center keys already rolled by
+-- earlier slots this run, so duplicate slots never offer the same card.
+
 -- get_current_pool marks banned/duplicate/out-of-pool entries as 'UNAVAILABLE'
-local function pool_choices(_type, _rarity)
-    local pool = get_current_pool(_type, _rarity)
+local function pool_choices(_type, exclude)
+    local pool = get_current_pool(_type)
     local choices = {}
     for _, key in ipairs(pool) do
-        if key ~= 'UNAVAILABLE' then choices[#choices + 1] = key end
+        if key ~= 'UNAVAILABLE' and not exclude[key] then choices[#choices + 1] = key end
     end
     return choices
 end
@@ -64,18 +91,19 @@ end
 -- rarity itself via SMODS.poll_rarity, respecting modded rarities and their
 -- weights. Uniform: every poolable joker has equal odds regardless of rarity
 -- (legendaries stay excluded — they only spawn through the Soul).
-local function poll_joker()
-    if config.uniform_joker then
+local function poll_joker(uniform, seed, exclude)
+    if uniform then
         local choices = {}
         for _, v in ipairs(G.P_CENTER_POOLS.Joker) do
             if v.unlocked ~= false and not v.demo and not v.hidden and v.rarity ~= 4
-                and not G.GAME.banned_keys[v.key] and not G.GAME.used_jokers[v.key] then
+                and not G.GAME.banned_keys[v.key] and not G.GAME.used_jokers[v.key]
+                and not exclude[v.key] then
                 choices[#choices + 1] = v.key
             end
         end
-        return pseudorandom_element(choices, pseudoseed('neow_joker'))
+        return pseudorandom_element(choices, pseudoseed(seed))
     end
-    return pseudorandom_element(pool_choices('Joker'), pseudoseed('neow_joker'))
+    return pseudorandom_element(pool_choices('Joker', exclude), pseudoseed(seed))
 end
 
 -- The shop pool (get_current_pool) at run start contains only base-tier
@@ -83,7 +111,7 @@ end
 -- redeemed — and it's the same pool the ante-1 shop draws from. Roll over
 -- the full voucher registry instead, and exclude whatever the first shop
 -- has already queued so the blessing never duplicates it.
-local function poll_voucher()
+local function poll_voucher(seed, exclude)
     local queued = {}
     local shop = G.GAME.current_round and G.GAME.current_round.voucher
     if type(shop) == 'string' then
@@ -94,11 +122,12 @@ local function poll_voucher()
     local choices = {}
     for _, v in ipairs(G.P_CENTER_POOLS.Voucher) do
         if v.unlocked ~= false and not G.GAME.banned_keys[v.key]
-            and not G.GAME.used_vouchers[v.key] and not queued[v.key] then
+            and not G.GAME.used_vouchers[v.key] and not queued[v.key]
+            and not exclude[v.key] then
             choices[#choices + 1] = v.key
         end
     end
-    return pseudorandom_element(choices, pseudoseed('neow_voucher'))
+    return pseudorandom_element(choices, pseudoseed(seed))
 end
 
 -- Rolls over every consumable type (Tarot, Planet, Spectral, plus modded
@@ -106,22 +135,22 @@ end
 -- deterministic for a given seed. Uniform: one flat pool, equal odds for
 -- every card. Weighted: type picked by its shop rate (Spectral is rate 0
 -- outside the Ghost deck, matching the shop), then uniform within the type.
-local function poll_consumable()
+local function poll_consumable(uniform, seed, exclude)
     local types = {}
     for key in pairs(SMODS.ConsumableType.obj_table) do types[#types + 1] = key end
     table.sort(types)
-    if config.uniform_consumable then
+    if uniform then
         local choices = {}
         for _, _type in ipairs(types) do
-            for _, key in ipairs(pool_choices(_type)) do choices[#choices + 1] = key end
+            for _, key in ipairs(pool_choices(_type, exclude)) do choices[#choices + 1] = key end
         end
-        return pseudorandom_element(choices, pseudoseed('neow_consumable'))
+        return pseudorandom_element(choices, pseudoseed(seed))
     end
     local pool, cume = {}, 0
     for _, _type in ipairs(types) do
         local rate = G.GAME[_type:lower() .. '_rate'] or 0
         if rate > 0 then
-            local choices = pool_choices(_type)
+            local choices = pool_choices(_type, exclude)
             if #choices > 0 then
                 cume = cume + rate
                 pool[#pool + 1] = { choices = choices, cume = cume }
@@ -129,10 +158,10 @@ local function poll_consumable()
         end
     end
     if cume == 0 then return nil end
-    local poll = pseudorandom(pseudoseed('neow_consumable_type')) * cume
+    local poll = pseudorandom(pseudoseed(seed .. '_type')) * cume
     for _, entry in ipairs(pool) do
         if poll <= entry.cume then
-            return pseudorandom_element(entry.choices, pseudoseed('neow_consumable'))
+            return pseudorandom_element(entry.choices, pseudoseed(seed))
         end
     end
 end
@@ -141,10 +170,10 @@ end
 -- mirrors get_pack() without its guaranteed first-shop Buffoon pack; uniform
 -- gives every pack equal odds (zero-weight packs stay excluded — mods use
 -- weight 0 to disable a pack).
-local function poll_booster()
+local function poll_booster(uniform, seed, exclude)
     local pool, cume = {}, 0
     for _, v in ipairs(G.P_CENTER_POOLS.Booster) do
-        if not G.GAME.banned_keys[v.key] then
+        if not G.GAME.banned_keys[v.key] and not exclude[v.key] then
             local w = (v.get_weight and v:get_weight()) or v.weight or 1
             if w > 0 then
                 cume = cume + w
@@ -152,11 +181,11 @@ local function poll_booster()
             end
         end
     end
-    if config.uniform_booster then
-        local entry = pseudorandom_element(pool, pseudoseed('neow_pack'))
+    if uniform then
+        local entry = pseudorandom_element(pool, pseudoseed(seed))
         return entry and entry.center
     end
-    local poll = pseudorandom(pseudoseed('neow_pack')) * cume
+    local poll = pseudorandom(pseudoseed(seed)) * cume
     for _, entry in ipairs(pool) do
         if poll <= entry.cume then return entry.center end
     end
@@ -205,52 +234,71 @@ local function redeem_voucher(center)
     }))
 end
 
--- Roll the four blessings up front so the player sees exactly what each
--- option grants before choosing.
+-- Roll every configured slot up front so the player sees exactly what each
+-- option grants before choosing. 'rolled' collects every center key already
+-- offered this run so duplicate slots never present the same card twice.
 local function resolve_blessings()
-    local blessings = {
-        {
-            label = { localize('nb_ten_dollars') },
-            colour = G.C.MONEY,
-            f = function() ease_dollars(10) end
-        },
-    }
-    local consumable_key = poll_consumable()
-    if consumable_key then
-        local center = G.P_CENTERS[consumable_key]
-        blessings[#blessings + 1] = {
-            label = { center_name(center) },
-            colour = G.C.SECONDARY_SET[center.set] or G.C.PURPLE,
-            center = center,
-            f = function() add_consumable(consumable_key) end
-        }
-    end
-    local joker_key = poll_joker()
-    if joker_key then
-        blessings[#blessings + 1] = {
-            label = { center_name(G.P_CENTERS[joker_key]) },
-            colour = G.C.RED,
-            center = G.P_CENTERS[joker_key],
-            f = function() add_joker(joker_key) end
-        }
-    end
-    local booster = poll_booster()
-    if booster then
-        blessings[#blessings + 1] = {
-            label = { center_name(booster) },
-            colour = G.C.BOOSTER,
-            center = booster,
-            f = function() open_booster(booster) end
-        }
-    end
-    local voucher_key = poll_voucher()
-    if voucher_key then
-        blessings[#blessings + 1] = {
-            label = { center_name(G.P_CENTERS[voucher_key]) .. ' ' .. localize('nb_voucher') },
-            colour = G.C.SECONDARY_SET.Voucher,
-            center = G.P_CENTERS[voucher_key],
-            f = function() redeem_voucher(G.P_CENTERS[voucher_key]) end
-        }
+    local blessings = {}
+    local rolled = {}
+    for slot = 1, 5 do
+        local _type = TYPE_KEYS[config['slot_type_' .. slot] or 1] or 'none'
+        local uniform = config['slot_uniform_' .. slot]
+        if _type == 'random' then
+            _type = pseudorandom_element(RANDOM_TYPES, pseudoseed('neow_slot_' .. slot))
+        end
+        local seed = 'neow_' .. _type .. '_' .. slot
+        if _type == 'money' then
+            blessings[#blessings + 1] = {
+                label = { localize('nb_ten_dollars') },
+                colour = G.C.MONEY,
+                f = function() ease_dollars(10) end
+            }
+        elseif _type == 'consumable' then
+            local key = poll_consumable(uniform, seed, rolled)
+            if key then
+                rolled[key] = true
+                local center = G.P_CENTERS[key]
+                blessings[#blessings + 1] = {
+                    label = { center_name(center) },
+                    colour = G.C.SECONDARY_SET[center.set] or G.C.PURPLE,
+                    center = center,
+                    f = function() add_consumable(key) end
+                }
+            end
+        elseif _type == 'joker' then
+            local key = poll_joker(uniform, seed, rolled)
+            if key then
+                rolled[key] = true
+                blessings[#blessings + 1] = {
+                    label = { center_name(G.P_CENTERS[key]) },
+                    colour = G.C.RED,
+                    center = G.P_CENTERS[key],
+                    f = function() add_joker(key) end
+                }
+            end
+        elseif _type == 'booster' then
+            local center = poll_booster(uniform, seed, rolled)
+            if center then
+                rolled[center.key] = true
+                blessings[#blessings + 1] = {
+                    label = { center_name(center) },
+                    colour = G.C.BOOSTER,
+                    center = center,
+                    f = function() open_booster(center) end
+                }
+            end
+        elseif _type == 'voucher' then
+            local key = poll_voucher(seed, rolled)
+            if key then
+                rolled[key] = true
+                blessings[#blessings + 1] = {
+                    label = { center_name(G.P_CENTERS[key]) .. ' ' .. localize('nb_voucher') },
+                    colour = G.C.SECONDARY_SET.Voucher,
+                    center = G.P_CENTERS[key],
+                    f = function() redeem_voucher(G.P_CENTERS[key]) end
+                }
+            end
+        end
     end
     return blessings
 end
@@ -279,8 +327,7 @@ local function create_neow_box(buttons)
     return t
 end
 
-local function create_blessings_overlay()
-    local blessings = resolve_blessings()
+local function create_blessings_overlay(blessings)
     local buttons = {}
     for i, blessing in ipairs(blessings) do
         G.FUNCS['neow_blessing_' .. i] = function()
@@ -324,7 +371,10 @@ local function replace_jimbo_sprite()
 end
 
 local function draw_blessings_overlay()
-    create_blessings_overlay()
+    -- Every slot set to None (or all pools empty): start the run normally.
+    local blessings = resolve_blessings()
+    if #blessings == 0 then return end
+    create_blessings_overlay(blessings)
 
     table.insert(G.I.POPUP, G.BLESSINGS_JIMBO)
     table.insert(G.OVERLAY_MENU.children, G.BLESSINGS_JIMBO)
