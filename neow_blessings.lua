@@ -334,7 +334,12 @@ local function create_blessings_overlay(blessings)
             blessing.f()
             G.FUNCS:exit_overlay_menu()
         end
-        local button = UIBox_button { id = 'neow_blessing_' .. i, label = blessing.label, button = 'neow_blessing_' .. i, minw = 8, colour = blessing.colour }
+        -- focus_args gives gamepad/Steam Deck users a focus anchor: snap_to
+        -- pulls controller focus onto the first blessing as soon as a
+        -- controller becomes active, nav = 'wide' makes stick/dpad up-down
+        -- navigation behave for full-width buttons stacked in a column.
+        local button = UIBox_button { id = 'neow_blessing_' .. i, label = blessing.label, button = 'neow_blessing_' .. i, minw = 8, colour = blessing.colour,
+            focus_args = { nav = 'wide', snap_to = (i == 1) } }
         -- Hovering the button shows the game's own description popup for the
         -- rolled center, exactly like the tooltips on card-description links.
         -- Dry-run the tooltip first: it is generated without a real Card, and
@@ -376,17 +381,21 @@ local function draw_blessings_overlay()
     if #blessings == 0 then return end
     create_blessings_overlay(blessings)
 
-    table.insert(G.I.POPUP, G.BLESSINGS_JIMBO)
-    table.insert(G.OVERLAY_MENU.children, G.BLESSINGS_JIMBO)
-
+    -- Neow is attached as the jimbo_spot object only (like the base game's
+    -- game-over Jimbo). It must NOT be pushed into G.I.POPUP or
+    -- G.OVERLAY_MENU.children here: G.BLESSINGS_JIMBO still holds the
+    -- previous run's destroyed Card_Character (or nil on the first run), and
+    -- registering a destroyed object there leaves the draw/input loops
+    -- iterating over its destroyed children every frame.
     G.E_MANAGER:add_event(Event({
         trigger = 'after',
         delay = 0.5,
         func = function()
-            G.CONTROLLER.interrupt.focus = true
+            -- The overlay can be gone before this fires (e.g. run restarted)
+            local spot = G.OVERLAY_MENU and G.OVERLAY_MENU:get_UIE_by_ID('jimbo_spot')
+            if not spot then return true end
             G.BLESSINGS_JIMBO = Card_Character({ x = 0, y = 5 })
             replace_jimbo_sprite()
-            local spot = G.OVERLAY_MENU:get_UIE_by_ID('jimbo_spot')
             spot.config.object:remove()
             spot.config.object = G.BLESSINGS_JIMBO
             G.BLESSINGS_JIMBO.ui_object_updated = true
