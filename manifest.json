@@ -1,7 +1,7 @@
 {
-    "name": "NeowBlessings",
+    "name": "Handout",
     "version_number": "1.0.0",
-    "website_url": "https://github.com/kjossul/NeowBlessings",
-    "description": "Choose between 4 blessings at the start of your run, inspired from Slay the Spire.",
+    "website_url": "https://github.com/aarons/Balatro-Handout",
+    "description": "Choose a randomized starting reward from configurable Jokers, consumables, Booster packs, and Vouchers.",
     "dependencies": []
 }

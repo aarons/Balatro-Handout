@@ -1,35 +1,147 @@
--- Neow Blessings: choose one of 4 blessings at the start of each run.
+-- Handout: choose a starting reward at the start of each run.
 -- Blessings are resolved from the live card pools when the run starts, so
 -- jokers, booster packs, vouchers, and rarities added by other mods are
 -- included automatically — no curated lists.
 
-sendDebugMessage("Loaded NeowBlessings~")
+sendDebugMessage("Loaded Handout~")
 
 -- Live config table: defaults come from config.lua, user changes are made in
--- the Mods > Neow Blessings > Config tab and persisted by Steamodded.
+-- the Mods > Handout > Config tab and persisted by Steamodded.
 local config = SMODS.current_mod.config
+
+local function copy_count(value)
+    local count = tonumber(value) or 1
+    if count ~= count then count = 1 end
+    return math.max(1, math.min(5, math.floor(count)))
+end
+
+G.FUNCS.nb_copies = function(args)
+    config.copies = copy_count(args.to_key)
+end
 
 -- The 5 blessing slots each hold one of these types. Indices are what
 -- config.slot_type_N stores, so this order must never be reshuffled.
-local TYPE_KEYS = { 'none', 'money', 'consumable', 'joker', 'booster', 'voucher', 'random' }
+-- Index 2 used to be Money. Keep it as None for existing saved configs.
+local TYPE_KEYS = { 'none', 'none', 'consumable', 'joker', 'booster', 'voucher', 'random' }
+local TYPE_OPTIONS = { 1, 3, 4, 5, 6, 7 }
 -- 'random' resolves to one of these at run start; 'none' is excluded.
-local RANDOM_TYPES = { 'money', 'consumable', 'joker', 'booster', 'voucher' }
+local RANDOM_TYPES = { 'consumable', 'joker', 'booster', 'voucher' }
+
+local VANILLA_RARITIES = { Common = 1, Uncommon = 2, Rare = 3, Legendary = 4 }
+
+-- Steamodded has no universal quality rank for custom rarities. Order the
+-- range by base Joker drop weight (most common first), with stable key ties.
+local function joker_rarities()
+    local rarities, seen = {}, {}
+    local function add(key, weight)
+        if seen[key] then return end
+        seen[key] = true
+        local definition = SMODS.Rarities[key]
+        rarities[#rarities + 1] = {
+            key = key,
+            weight = weight or (definition and definition.default_weight) or 0,
+        }
+    end
+    for _, rarity in ipairs(SMODS.ObjectTypes.Joker.rarities) do
+        add(rarity.key, rarity.weight)
+    end
+    -- Shop tiers omit Legendary. Include vanilla tiers and all actual Joker
+    -- rarity pools, including modded tiers that cannot appear in the shop.
+    for key in pairs(VANILLA_RARITIES) do add(key) end
+    for id in pairs(G.P_JOKER_RARITY_POOLS or {}) do
+        local key = id
+        for name, vanilla_id in pairs(VANILLA_RARITIES) do
+            if id == vanilla_id then key = name end
+        end
+        add(key)
+    end
+    table.sort(rarities, function(a, b)
+        if a.weight ~= b.weight then return a.weight > b.weight end
+        return a.key < b.key
+    end)
+    return rarities
+end
+
+local function rarity_bounds(rarities)
+    local minimum, maximum = 1, #rarities
+    for i, rarity in ipairs(rarities) do
+        if rarity.key == config.joker_min_rarity then minimum = i end
+        if rarity.key == config.joker_max_rarity then maximum = i end
+    end
+    return math.min(minimum, maximum), math.max(minimum, maximum)
+end
+
+-- The base game only calls slider callbacks for mouse dragging, not controller
+-- input. A local UI update function handles both and keeps the bounds ordered.
+G.FUNCS.nb_rarity_slider = function(e)
+    G.FUNCS.slider(e)
+    local bar = e.children[1]
+    local args = bar.config.ref_table
+    local state = args.ref_table
+    -- Retain fractional controller movement: rounding the backing value every
+    -- frame would discard the game's 1%-of-range directional steps.
+    local position = state[args.ref_value]
+    if args.ref_value == 'minimum' then
+        position = math.max(1, math.min(position, math.floor(state.maximum + 0.5)))
+    else
+        position = math.min(#state.rarities, math.max(position, math.floor(state.minimum + 0.5)))
+    end
+    state[args.ref_value] = position
+    local value = math.floor(position + 0.5)
+    local is_endpoint = (args.ref_value == 'minimum' and value == 1)
+        or (args.ref_value == 'maximum' and value == #state.rarities)
+    config[args.config_key] = is_endpoint and '' or state.rarities[value].key
+    args.text = localize(args.ref_value == 'maximum' and is_endpoint
+        and 'nb_unlimited' or ('k_' .. state.rarities[value].key:lower()))
+    bar.T.w = (value - args.min) / (args.max - args.min) * args.w
+    bar.config.w = bar.T.w
+end
+
+local function rarity_slider(state, bound, config_key, label)
+    local slider = create_slider {
+        label = localize(label), label_scale = 0.35,
+        ref_table = state, ref_value = bound, config_key = config_key,
+        min = 1, max = math.max(2, #state.rarities), decimal_places = 0,
+        w = 2.2, h = 0.3, text_scale = 0.28,
+    }
+    local function prepare(node)
+        if node.config.func == 'slider' then node.config.func = 'nb_rarity_slider' end
+        if node.config.minw == 0.8 then node.config.minw = 1.8 end
+        for _, child in ipairs(node.nodes or {}) do prepare(child) end
+    end
+    prepare(slider)
+    return slider
+end
 
 G.FUNCS.nb_slot_type = function(args)
-    config['slot_type_' .. args.cycle_config.nb_slot] = args.to_key
+    config['slot_type_' .. args.cycle_config.nb_slot] = TYPE_OPTIONS[args.to_key]
 end
 
 SMODS.current_mod.config_tab = function()
     local type_names = {}
-    for i, key in ipairs(TYPE_KEYS) do type_names[i] = localize('nb_type_' .. key) end
+    for i, id in ipairs(TYPE_OPTIONS) do type_names[i] = localize('nb_type_' .. TYPE_KEYS[id]) end
     local rows = {}
+    rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+        create_option_cycle {
+            label = localize('nb_copies'), options = { '1', '2', '3', '4', '5' },
+            current_option = copy_count(config.copies), opt_callback = 'nb_copies',
+            w = 3.2, scale = 0.7, colour = G.C.RED,
+        },
+    }}
+    rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+        {n = G.UIT.T, config = { text = localize('nb_copies_info'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT }},
+    }}
     for i = 1, 5 do
+        local current_option = 1
+        for option, id in ipairs(TYPE_OPTIONS) do
+            if config['slot_type_' .. i] == id then current_option = option end
+        end
         rows[#rows + 1] = {n = G.UIT.R, config = { align = "cm", padding = 0.03 }, nodes = {
             {n = G.UIT.C, config = { align = "cm", minw = 4.5 }, nodes = {
                 create_option_cycle {
                     label = localize('nb_blessing') .. ' ' .. i,
                     options = type_names,
-                    current_option = config['slot_type_' .. i] or 1,
+                    current_option = current_option,
                     opt_callback = 'nb_slot_type',
                     nb_slot = i,
                     w = 3.2, scale = 0.7, colour = G.C.RED,
@@ -43,34 +155,23 @@ SMODS.current_mod.config_tab = function()
     rows[#rows + 1] = {n = G.UIT.R, config = { align = "cm", padding = 0.05 }, nodes = {
         {n = G.UIT.T, config = { text = localize('nb_uniform_info'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT }},
     }}
-    return {n = G.UIT.ROOT, config = { align = "cm", padding = 0.05, colour = G.C.CLEAR }, nodes = rows}
-end
-
-SMODS.Atlas {
-    key = 'jimbo',
-    path = 'j_neow.png',
-    px = 71,
-    py = 95,
-}
-
--- Stand-in center for the Neow character card shown on the blessing screen.
--- Not registered as a real Joker so it can never enter any pool.
-local j_neow = {
-    -- key must be 'c_base' so SMODS.get_enhancements treats this card as
-    -- unenhanced; any other value (including nil) crashes enhancement lookups
-    key = 'c_base',
-    order = 151, unlocked = true, start_alerted = true, discovered = true,
-    blueprint_compat = true, eternal_compat = true, rarity = 1, cost = 2,
-    name = "neow", pos = { x = 0, y = 0 }, set = "Default", effect = "Base",
-    cost_mult = 1.0, config = {}, atlas = 'neow_jimbo',
-}
-
-local function center_name(center)
-    local group = G.localization.descriptions[center.set]
-    if group and group[center.key] and group[center.key].name then
-        return localize { type = 'name_text', set = center.set, key = center.key }
+    local rarities = joker_rarities()
+    if #rarities > 0 then
+        local minimum, maximum = rarity_bounds(rarities)
+        local state = { minimum = minimum, maximum = maximum, rarities = rarities }
+        rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+            {n = G.UIT.C, config = { align = 'cm' }, nodes = {
+                rarity_slider(state, 'minimum', 'joker_min_rarity', 'nb_min_rarity'),
+            }},
+            {n = G.UIT.C, config = { align = 'cm' }, nodes = {
+                rarity_slider(state, 'maximum', 'joker_max_rarity', 'nb_max_rarity'),
+            }},
+        }}
+        rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+            {n = G.UIT.T, config = { text = localize('nb_rarity_info'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT }},
+        }}
     end
-    return center.name or center.key
+    return {n = G.UIT.ROOT, config = { align = "cm", padding = 0.05, colour = G.C.CLEAR }, nodes = rows}
 end
 
 -- Every poller takes a seed (unique per slot, so two slots of the same type
@@ -87,23 +188,56 @@ local function pool_choices(_type, exclude)
     return choices
 end
 
--- Weighted: with no rarity argument, Steamodded's get_current_pool polls the
--- rarity itself via SMODS.poll_rarity, respecting modded rarities and their
--- weights. Uniform: every poolable joker has equal odds regardless of rarity
--- (legendaries stay excluded — they only spawn through the Soul).
+-- Filter before rolling rarity, so empty/excluded tiers cannot consume a slot.
+-- Explicit rarity names avoid get_current_pool's numeric rarity-roll API.
 local function poll_joker(uniform, seed, exclude)
-    if uniform then
-        local choices = {}
-        for _, v in ipairs(G.P_CENTER_POOLS.Joker) do
-            if v.unlocked ~= false and not v.demo and not v.hidden and v.rarity ~= 4
-                and not G.GAME.banned_keys[v.key] and not G.GAME.used_jokers[v.key]
-                and not exclude[v.key] then
-                choices[#choices + 1] = v.key
+    local rarities = joker_rarities()
+    local minimum, maximum = rarity_bounds(rarities)
+    local all_choices, weighted, total = {}, {}, 0
+    for i = minimum, maximum do
+        local rarity = rarities[i]
+        local rarity_id = VANILLA_RARITIES[rarity.key] or rarity.key
+        local choices, seen = {}, {}
+        local pool = get_current_pool('Joker', rarity.key, nil, seed)
+        for _, key in ipairs(pool) do
+            local center = G.P_CENTERS[key]
+            -- The game's empty-pool fallback may be a Common Joker. Never
+            -- let that bypass the selected range or duplicate exclusions.
+            if center and center.rarity == rarity_id and not seen[key]
+                and (center.unlocked ~= false or rarity_id == 4)
+                and not center.demo and not center.hidden
+                and not G.GAME.banned_keys[key] and not G.GAME.used_jokers[key]
+                and not exclude[key] then
+                choices[#choices + 1] = key
+                all_choices[#all_choices + 1] = key
+                seen[key] = true
             end
         end
-        return pseudorandom_element(choices, pseudoseed(seed))
+        if not uniform and #choices > 0 then
+            -- Soul-only rarities have no shop weight, but can be blessings.
+            local weight = rarity.weight > 0 and rarity.weight or 0.01
+            local definition = SMODS.Rarities[rarity.key]
+            if definition and definition.get_weight then
+                weight = definition:get_weight(weight, SMODS.ObjectTypes.Joker)
+            end
+            weight = weight * (G.GAME[rarity.key:lower() .. '_mod'] or 1)
+            if weight > 0 then
+                total = total + weight
+                weighted[#weighted + 1] = { choices = choices, cume = total }
+            end
+        end
     end
-    return pseudorandom_element(pool_choices('Joker', exclude), pseudoseed(seed))
+    if uniform then
+        if #all_choices == 0 then return nil end
+        return pseudorandom_element(all_choices, pseudoseed(seed))
+    end
+    if total == 0 then return nil end
+    local roll = pseudorandom(pseudoseed(seed .. '_rarity')) * total
+    for _, entry in ipairs(weighted) do
+        if roll < entry.cume then
+            return pseudorandom_element(entry.choices, pseudoseed(seed))
+        end
+    end
 end
 
 -- The shop pool (get_current_pool) at run start contains only base-tier
@@ -191,7 +325,15 @@ local function poll_booster(uniform, seed, exclude)
     end
 end
 
+local function has_room(area, buffer)
+    -- Refresh modded slot usage as well as deck limits before every copy.
+    if area.handle_card_limit then area:handle_card_limit() end
+    -- Steamodded's card_limit already subtracts extra slots used by cards.
+    return #area.cards + (buffer or 0) < area.config.card_limit
+end
+
 local function add_joker(key)
+    if not has_room(G.jokers, G.GAME.joker_buffer) then return end
     local card = SMODS.add_card { set = 'Joker', key = key }
     if card then
         card:start_materialize()
@@ -200,6 +342,7 @@ local function add_joker(key)
 end
 
 local function add_consumable(key)
+    if not has_room(G.consumeables, G.GAME.consumeable_buffer) then return end
     local center = G.P_CENTERS[key]
     local card = SMODS.add_card { set = center.set, key = key }
     if card then
@@ -215,6 +358,36 @@ local function open_booster(center)
     card.cost = 0
     G.FUNCS.use_card({ config = { ref_table = card } })
     card:start_materialize()
+end
+
+-- A pack must finish (including Skip) before the next copy can open.
+local pending_boosters
+local end_consumeable_ref = G.FUNCS.end_consumeable
+G.FUNCS.end_consumeable = function(e, delayfac)
+    local result = end_consumeable_ref(e, delayfac)
+    local pending = pending_boosters
+    if pending and not pending.waiting then
+        pending.waiting = true
+        G.E_MANAGER:add_event(Event({
+            trigger = 'after', delay = 1.1 * (delayfac or 1),
+            blocking = false, blockable = false,
+            func = function()
+                if pending_boosters ~= pending then return true end
+                if G.GAME.PACK_INTERRUPT or G.booster_pack then return false end
+                pending.remaining = pending.remaining - 1
+                pending.waiting = false
+                if pending.remaining == 0 then pending_boosters = nil end
+                open_booster(pending.center)
+                return true
+            end,
+        }))
+    end
+    return result
+end
+
+local function open_boosters(center, copies)
+    if copies > 1 then pending_boosters = { center = center, remaining = copies - 1 } end
+    open_booster(center)
 end
 
 local function redeem_voucher(center)
@@ -239,6 +412,7 @@ end
 -- offered this run so duplicate slots never present the same card twice.
 local function resolve_blessings()
     local blessings = {}
+    local copies = copy_count(config.copies)
     local rolled = {}
     for slot = 1, 5 do
         local _type = TYPE_KEYS[config['slot_type_' .. slot] or 1] or 'none'
@@ -247,22 +421,14 @@ local function resolve_blessings()
             _type = pseudorandom_element(RANDOM_TYPES, pseudoseed('neow_slot_' .. slot))
         end
         local seed = 'neow_' .. _type .. '_' .. slot
-        if _type == 'money' then
-            blessings[#blessings + 1] = {
-                label = { localize('nb_ten_dollars') },
-                colour = G.C.MONEY,
-                f = function() ease_dollars(10) end
-            }
-        elseif _type == 'consumable' then
+        if _type == 'consumable' then
             local key = poll_consumable(uniform, seed, rolled)
             if key then
                 rolled[key] = true
                 local center = G.P_CENTERS[key]
                 blessings[#blessings + 1] = {
-                    label = { center_name(center) },
-                    colour = G.C.SECONDARY_SET[center.set] or G.C.PURPLE,
                     center = center,
-                    f = function() add_consumable(key) end
+                    f = function() for _ = 1, copies do add_consumable(key) end end
                 }
             end
         elseif _type == 'joker' then
@@ -270,10 +436,8 @@ local function resolve_blessings()
             if key then
                 rolled[key] = true
                 blessings[#blessings + 1] = {
-                    label = { center_name(G.P_CENTERS[key]) },
-                    colour = G.C.RED,
                     center = G.P_CENTERS[key],
-                    f = function() add_joker(key) end
+                    f = function() for _ = 1, copies do add_joker(key) end end
                 }
             end
         elseif _type == 'booster' then
@@ -281,10 +445,8 @@ local function resolve_blessings()
             if center then
                 rolled[center.key] = true
                 blessings[#blessings + 1] = {
-                    label = { center_name(center) },
-                    colour = G.C.BOOSTER,
                     center = center,
-                    f = function() open_booster(center) end
+                    f = function() open_boosters(center, copies) end
                 }
             end
         elseif _type == 'voucher' then
@@ -292,10 +454,8 @@ local function resolve_blessings()
             if key then
                 rolled[key] = true
                 blessings[#blessings + 1] = {
-                    label = { center_name(G.P_CENTERS[key]) .. ' ' .. localize('nb_voucher') },
-                    colour = G.C.SECONDARY_SET.Voucher,
                     center = G.P_CENTERS[key],
-                    f = function() redeem_voucher(G.P_CENTERS[key]) end
+                    f = function() for _ = 1, copies do redeem_voucher(G.P_CENTERS[key]) end end
                 }
             end
         end
@@ -303,76 +463,47 @@ local function resolve_blessings()
     return blessings
 end
 
--- Two elements on the overlay menu: the box containing the blessing options
--- and the Neow card
-local function create_neow_box(buttons)
-    local t = create_UIBox_generic_options({ contents = buttons, no_back = true })
-    t.nodes[1] = {n = G.UIT.R, config = { align = "cm", padding = 0.1 }, nodes = {
-
-        -- First, the blessings box
-        {n = G.UIT.C, config = { align = "tm", padding = 0.3 }, nodes = {
-            {n = G.UIT.R, config = { align = "cm" }, nodes = {
-                {n = G.UIT.O, config = { object = DynaText({ string = { localize('nb_choose') }, colours = { G.C.MONEY }, shadow = true, float = true, scale = 1.5, pop_in = 0.4, maxw = 6.5 }) }}
-            }},
-            t.nodes[1]
-        }},
-
-        -- Second, Neow card
-        {n = G.UIT.C, config = { align = "cm", padding = 1 }, nodes = {
-            {n = G.UIT.R, config = { align = "cm" }, nodes = {
-                {n = G.UIT.O, config = { padding = 0, id = 'jimbo_spot', object = Moveable(0, 0, G.CARD_W * 1.1, G.CARD_H * 1.1) }},
-            }},
-        }},
-    }}
-    return t
-end
-
+-- Use real Cards so vanilla and modded art, animations, and descriptions
+-- behave just like the collection. These previews never enter the deck.
 local function create_blessings_overlay(blessings)
-    local buttons = {}
-    for i, blessing in ipairs(blessings) do
-        G.FUNCS['neow_blessing_' .. i] = function()
+    G.SETTINGS.paused = true
+    local area = CardArea(G.ROOM.T.x, G.ROOM.T.y,
+        ((#blessings - 1) * 1.4 + 1.27) * G.CARD_W, G.CARD_H * 1.5,
+        { card_limit = #blessings, type = 'title', highlight_limit = 0,
+            card_w = G.CARD_W * 1.27 })
+    local chosen = false
+    local overlay
+    for _, blessing in ipairs(blessings) do
+        local scale = blessing.center.set == 'Booster' and 1.27 or 1
+        local card = Card(area.T.x, area.T.y, G.CARD_W * scale, G.CARD_H * scale,
+            G.P_CARDS.empty, blessing.center, {
+                bypass_discovery_center = true, bypass_discovery_ui = true, bypass_lock = true,
+            })
+        card.states.drag.can = false
+        -- Mouse clicks and controller confirmation both use Card:click.
+        -- Keep this override local to the preview, leaving normal cards alone.
+        card.click = function()
+            if chosen or not overlay or G.OVERLAY_MENU ~= overlay then return end
+            chosen = true
+            -- Remove every preview and unpause before applying the reward,
+            -- especially when a booster opens its own selection screen.
+            G.FUNCS.exit_overlay_menu()
             blessing.f()
-            G.FUNCS:exit_overlay_menu()
         end
-        -- focus_args gives gamepad/Steam Deck users a focus anchor: snap_to
-        -- pulls controller focus onto the first blessing as soon as a
-        -- controller becomes active, nav = 'wide' makes stick/dpad up-down
-        -- navigation behave for full-width buttons stacked in a column.
-        local button = UIBox_button { id = 'neow_blessing_' .. i, label = blessing.label, button = 'neow_blessing_' .. i, minw = 8, colour = blessing.colour,
-            focus_args = { nav = 'wide', snap_to = (i == 1) } }
-        -- Hovering the button shows the game's own description popup for the
-        -- rolled center, exactly like the tooltips on card-description links.
-        -- Dry-run the tooltip first: it is generated without a real Card, and
-        -- some mods' loc_vars index Card-only fields (e.g. card.config.center
-        -- in Pokermon's pocket packs) and would crash the game on hover.
-        if blessing.center and pcall(create_UIBox_detailed_tooltip, blessing.center) then
-            button.nodes[1].config.detailed_tooltip = blessing.center
-        end
-        buttons[i] = {n = G.UIT.R, config = { align = "cm", padding = 0.1 }, nodes = { button }}
+        area:emplace(card)
     end
 
     G.FUNCS.overlay_menu {
-        definition = create_neow_box(buttons),
+        definition = create_UIBox_generic_options {
+            no_back = true,
+            contents = {
+                {n = G.UIT.O, config = { object = area }},
+            },
+        },
         config = { no_esc = true }
     }
-end
-
-local function replace_jimbo_sprite()
-    -- remove old Jimbo
-    local jimbo = G.BLESSINGS_JIMBO
-    jimbo.children.card:remove()
-    jimbo.children.card = Card(jimbo.T.x, jimbo.T.y, G.CARD_W, G.CARD_H, G.P_CARDS.empty, j_neow, { bypass_discovery_center = true })
-    jimbo.children.card.states.visible = false
-    jimbo.children.card:start_materialize({ G.C.BLUE, G.C.WHITE, G.C.RED })
-    jimbo.children.card:set_alignment {
-        major = jimbo, type = 'cm', offset = { x = 0, y = 0 }
-    }
-    jimbo.children.card.jimbo = jimbo
-    jimbo.children.card.states.collide.can = true
-    jimbo.children.card.states.focus.can = false
-    jimbo.children.card.states.hover.can = true
-    jimbo.children.card.states.drag.can = false
-    jimbo.children.card.hover = Node.hover
+    overlay = G.OVERLAY_MENU
+    G.CONTROLLER:snap_to { node = area.cards[1] }
 end
 
 local function draw_blessings_overlay()
@@ -380,35 +511,11 @@ local function draw_blessings_overlay()
     local blessings = resolve_blessings()
     if #blessings == 0 then return end
     create_blessings_overlay(blessings)
-
-    -- Neow is attached as the jimbo_spot object only (like the base game's
-    -- game-over Jimbo). It must NOT be pushed into G.I.POPUP or
-    -- G.OVERLAY_MENU.children here: G.BLESSINGS_JIMBO still holds the
-    -- previous run's destroyed Card_Character (or nil on the first run), and
-    -- registering a destroyed object there leaves the draw/input loops
-    -- iterating over its destroyed children every frame.
-    G.E_MANAGER:add_event(Event({
-        trigger = 'after',
-        delay = 0.5,
-        func = function()
-            -- The overlay can be gone before this fires (e.g. run restarted)
-            local spot = G.OVERLAY_MENU and G.OVERLAY_MENU:get_UIE_by_ID('jimbo_spot')
-            if not spot then return true end
-            G.BLESSINGS_JIMBO = Card_Character({ x = 0, y = 5 })
-            replace_jimbo_sprite()
-            spot.config.object:remove()
-            spot.config.object = G.BLESSINGS_JIMBO
-            G.BLESSINGS_JIMBO.ui_object_updated = true
-            G.BLESSINGS_JIMBO:add_speech_bubble("nb_1", "tm", { quip = true })
-            G.BLESSINGS_JIMBO:say_stuff(5)
-
-            return true
-        end
-    }))
 end
 
 local game_start_run_ref = Game.start_run
 function Game.start_run(self, args)
+    pending_boosters = nil
     local result = game_start_run_ref(self, args)
     if not (args and args.savetext) then -- it's a new game
         draw_blessings_overlay()

@@ -1,11 +1,15 @@
 {
     "id": "NeowBlessings",
-    "name": "Neow Blessings",
-    "author": ["kjossul", "typhoonbro", "Aaron Scott"],
-    "description": "Choose between 4 blessings at the start of your run, inspired from Slay the Spire.",
+    "name": "Handout",
+    "author": [
+        "aarons"
+    ],
+    "description": "Choose a randomized starting reward from configurable Jokers, consumables, Booster packs, and Vouchers.",
     "prefix": "neow",
     "main_file": "neow_blessings.lua",
     "priority": 100,
     "version": "2.0.1",
-    "dependencies": ["Steamodded (>=1.0.0~ALPHA-0812d)"]
+    "dependencies": [
+        "Steamodded (>=1.0.0~ALPHA-0812d)"
+    ]
 }
