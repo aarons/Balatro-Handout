@@ -1,4 +1,4 @@
--- Standalone behavioral tests for the mod's real polling and slider functions.
+-- Standalone behavioral tests for the mod's real polling and dropdown functions.
 local config = dofile('config.lua')
 local random_value = 0
 local rarity_ids = { Common = 1, Uncommon = 2, Rare = 3, Legendary = 4 }
@@ -53,18 +53,9 @@ end
 
 create_option_cycle = function(args) return { config = args } end
 create_toggle = create_option_cycle
-create_slider = function(args)
-    return { config = {}, nodes = {
-        { config = { func = 'slider' }, nodes = {
-            { config = { ref_table = args } },
-        } },
-        { config = { minw = 0.8 } },
-    } }
-end
-G.FUNCS.slider = function(e)
-    local args = e.children[1].config.ref_table
-    if e.mouse_value then args.ref_table[args.ref_value] = e.mouse_value end
-end
+SMODS.GUI = { dropdown_select = function(args)
+    return { config = { args_table = args } }
+end }
 dofile('neow_blessings.lua')
 
 local function upvalue(fn, name)
@@ -182,54 +173,70 @@ for _, blessing in ipairs(blessings) do
     seen[blessing.center.key] = true
 end
 
--- Exercise actual UI wiring, mouse rounding, controller updates, persistence,
--- bound clamping, and reopening the config tab.
+-- Exercise UI wiring, disabled choices, persistence, and reopening the tab.
 range('', '')
-local function sliders()
+local function dropdowns()
     local result = {}
     local function walk(node)
-        if node.config.func == 'nb_rarity_slider' then
-            local args = node.nodes[1].config.ref_table
-            result[args.ref_value] = { children = { { config = { ref_table = args }, T = {} } } }
+        local args = node.config.args_table
+        if args and args.callback == 'nb_rarity_dropdown' then
+            result[args.ref_value] = args
         end
         for _, child in ipairs(node.nodes or {}) do walk(child) end
     end
     walk(SMODS.current_mod.config_tab())
     return result
 end
-local controls = sliders()
+-- Steamodded writes the chosen key before invoking the callback, and does
+-- not invoke it for disabled choices. Mouse and controller share this path.
+local function select_option(args, key)
+    if args.is_option_disabled(key) then return false end
+    args.ref_table[args.ref_value] = key
+    G.FUNCS[args.callback]({ config = { args_table = args, value = key } })
+    return true
+end
+local controls = dropdowns()
 local minimum, maximum = controls.minimum, controls.maximum
-G.FUNCS.nb_rarity_slider(maximum)
-equal(config.joker_max_rarity, '')
-equal(maximum.children[1].config.ref_table.text, 'nb_unlimited')
+equal(#minimum.options, 6)
+equal(minimum.options[4], 'mod_epic')
+equal(minimum.ref_table.minimum, 'Common')
+equal(maximum.ref_table.maximum, 'mod_special')
+equal(maximum.display_choice_func('mod_special'), 'nb_unlimited')
+assert(minimum.no_unselect and maximum.close_on_select and maximum.max_menu_h)
 random_value = 0.999
 for _, uniform in ipairs({ false, true }) do
     equal(poll(uniform, 'test', {}), 'j_special')
 end
-minimum.mouse_value = 2.7
-G.FUNCS.nb_rarity_slider(minimum)
+assert(select_option(minimum, 'Rare'))
 equal(config.joker_min_rarity, 'Rare')
-equal(minimum.children[1].config.ref_table.text, 'k_rare')
-minimum.mouse_value = nil
-local args = maximum.children[1].config.ref_table
-args.ref_table.maximum = 2 -- Controller changes value without a mouse callback.
-G.FUNCS.nb_rarity_slider(maximum)
-equal(args.ref_table.maximum, 3)
+equal(minimum.display_choice_func('Rare'), 'k_rare')
+assert(maximum.is_option_disabled('Uncommon'))
+assert(not select_option(maximum, 'Uncommon'))
+equal(config.joker_max_rarity, '')
+assert(select_option(maximum, 'Rare'))
 equal(config.joker_max_rarity, 'Rare')
-minimum.mouse_value = 6
-G.FUNCS.nb_rarity_slider(minimum)
+assert(minimum.is_option_disabled('mod_epic'))
+assert(not select_option(minimum, 'mod_epic'))
 equal(config.joker_min_rarity, 'Rare')
-controls = sliders()
-equal(controls.minimum.children[1].config.ref_table.ref_table.minimum, 3)
-equal(controls.maximum.children[1].config.ref_table.ref_table.maximum, 3)
--- Small controller steps must accumulate instead of being rounded away.
-range('', '')
-controls = sliders()
-minimum = controls.minimum
-args = minimum.children[1].config.ref_table
-for _ = 1, 20 do
-    args.ref_table.minimum = args.ref_table.minimum + 0.01 * (args.max - args.min)
-    G.FUNCS.nb_rarity_slider(minimum)
-end
-equal(config.joker_min_rarity, 'Uncommon')
-print('Rarity tests passed: bounds, weighting, all rarities, exclusions, slots, and sliders')
+-- Selecting an already selected tier cannot clear the range.
+assert(select_option(minimum, 'Rare'))
+controls = dropdowns()
+equal(controls.minimum.ref_table.minimum, 'Rare')
+equal(controls.maximum.ref_table.maximum, 'Rare')
+assert(select_option(controls.maximum, 'mod_special'))
+assert(select_option(controls.minimum, 'Common'))
+equal(config.joker_min_rarity, '')
+equal(config.joker_max_rarity, '')
+-- Missing mods and old settings open at valid endpoints; inverted saved
+-- bounds are displayed in order and normalized on the next selection.
+range('removed_mod', nil)
+controls = dropdowns()
+equal(controls.minimum.ref_table.minimum, 'Common')
+equal(controls.maximum.ref_table.maximum, 'mod_special')
+range('Rare', 'Uncommon')
+controls = dropdowns()
+equal(controls.minimum.ref_table.minimum, 'Uncommon')
+equal(controls.maximum.ref_table.maximum, 'Rare')
+assert(select_option(controls.minimum, 'Uncommon'))
+equal(config.joker_max_rarity, 'Rare')
+print('Rarity tests passed: bounds, weighting, all rarities, exclusions, slots, and dropdowns')

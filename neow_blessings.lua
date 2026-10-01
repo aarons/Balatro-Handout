@@ -71,46 +71,38 @@ local function rarity_bounds(rarities)
     return math.min(minimum, maximum), math.max(minimum, maximum)
 end
 
--- The base game only calls slider callbacks for mouse dragging, not controller
--- input. A local UI update function handles both and keeps the bounds ordered.
-G.FUNCS.nb_rarity_slider = function(e)
-    G.FUNCS.slider(e)
-    local bar = e.children[1]
-    local args = bar.config.ref_table
-    local state = args.ref_table
-    -- Retain fractional controller movement: rounding the backing value every
-    -- frame would discard the game's 1%-of-range directional steps.
-    local position = state[args.ref_value]
-    if args.ref_value == 'minimum' then
-        position = math.max(1, math.min(position, math.floor(state.maximum + 0.5)))
-    else
-        position = math.min(#state.rarities, math.max(position, math.floor(state.minimum + 0.5)))
-    end
-    state[args.ref_value] = position
-    local value = math.floor(position + 0.5)
-    local is_endpoint = (args.ref_value == 'minimum' and value == 1)
-        or (args.ref_value == 'maximum' and value == #state.rarities)
-    config[args.config_key] = is_endpoint and '' or state.rarities[value].key
-    args.text = localize(args.ref_value == 'maximum' and is_endpoint
-        and 'nb_unlimited' or ('k_' .. state.rarities[value].key:lower()))
-    bar.T.w = (value - args.min) / (args.max - args.min) * args.w
-    bar.config.w = bar.T.w
+-- Dropdowns store stable rarity keys; labels are only used for display.
+G.FUNCS.nb_rarity_dropdown = function(e)
+    local state = e.config.args_table.ref_table
+    config.joker_min_rarity = state.minimum == state.rarities[1].key and '' or state.minimum
+    config.joker_max_rarity = state.maximum == state.rarities[#state.rarities].key and '' or state.maximum
 end
 
-local function rarity_slider(state, bound, config_key, label)
-    local slider = create_slider {
-        label = localize(label), label_scale = 0.35,
-        ref_table = state, ref_value = bound, config_key = config_key,
-        min = 1, max = math.max(2, #state.rarities), decimal_places = 0,
-        w = 2.2, h = 0.3, text_scale = 0.28,
-    }
-    local function prepare(node)
-        if node.config.func == 'slider' then node.config.func = 'nb_rarity_slider' end
-        if node.config.minw == 0.8 then node.config.minw = 1.8 end
-        for _, child in ipairs(node.nodes or {}) do prepare(child) end
+local function rarity_dropdown(state, bound, label)
+    local options, positions = {}, {}
+    for i, rarity in ipairs(state.rarities) do
+        options[i], positions[rarity.key] = rarity.key, i
     end
-    prepare(slider)
-    return slider
+    return {n = G.UIT.C, config = { align = 'cm', padding = 0.05 }, nodes = {
+        {n = G.UIT.R, config = { align = 'cm' }, nodes = {
+            {n = G.UIT.T, config = { text = localize(label), scale = 0.35, colour = G.C.UI.TEXT_LIGHT }},
+        }},
+        SMODS.GUI.dropdown_select {
+            options = options, ref_table = state, ref_value = bound,
+            callback = 'nb_rarity_dropdown', no_unselect = true, close_on_select = true,
+            minw = 2.8, scale = 0.35, dropdown_scale = 0.35, max_menu_h = 3,
+            display_choice_func = function(key)
+                return localize(bound == 'maximum' and key == options[#options]
+                    and 'nb_unlimited' or ('k_' .. key:lower()))
+            end,
+            is_option_disabled = function(key)
+                if bound == 'minimum' then
+                    return positions[key] > positions[state.maximum]
+                end
+                return positions[key] < positions[state.minimum]
+            end,
+        },
+    }}
 end
 
 G.FUNCS.nb_slot_type = function(args)
@@ -158,13 +150,13 @@ SMODS.current_mod.config_tab = function()
     local rarities = joker_rarities()
     if #rarities > 0 then
         local minimum, maximum = rarity_bounds(rarities)
-        local state = { minimum = minimum, maximum = maximum, rarities = rarities }
+        local state = { minimum = rarities[minimum].key, maximum = rarities[maximum].key, rarities = rarities }
         rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
             {n = G.UIT.C, config = { align = 'cm' }, nodes = {
-                rarity_slider(state, 'minimum', 'joker_min_rarity', 'nb_min_rarity'),
+                rarity_dropdown(state, 'minimum', 'nb_min_rarity'),
             }},
             {n = G.UIT.C, config = { align = 'cm' }, nodes = {
-                rarity_slider(state, 'maximum', 'joker_max_rarity', 'nb_max_rarity'),
+                rarity_dropdown(state, 'maximum', 'nb_max_rarity'),
             }},
         }}
         rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {

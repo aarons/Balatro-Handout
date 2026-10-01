@@ -27,7 +27,7 @@ Configure up to five reward slots in **Mods > Handout > Config**: None, Consumab
 
 **Copies** sets how many copies of your selected blessing you receive, from **1–5** (default **1**). Each copy uses the same selected card. Jokers and consumables fill only the slots available under your deck's current limits, accounting for starting cards; excess copies are skipped. Booster copies open one at a time, continuing after you finish or skip each pack. Voucher copies redeem the same voucher repeatedly; the resulting benefit depends on the voucher's effect.
 
-The **Minimum Joker rarity** and **Maximum Joker rarity** sliders set one inclusive range for all Joker reward slots, including Random Choice slots that roll a Joker. Both default to the full range; the maximum displays **Unlimited**, including Legendary and modded rarities even when they cannot appear in shops. Set both to the same rarity to offer only that tier. The sliders stop at each other so the minimum cannot exceed the maximum.
+The **Minimum Joker rarity** and **Maximum Joker rarity** dropdowns set one inclusive range for all Joker reward slots, including Random Choice slots that roll a Joker. Both default to the full range; the maximum displays **Unlimited**, including Legendary and modded rarities even when they cannot appear in shops. Set both to the same rarity to offer only that tier. Options outside the other bound are disabled so the minimum cannot exceed the maximum.
 
 Rarities run from highest to lowest base Joker drop weight (Common → Uncommon → Rare → Legendary in vanilla). Modded rarities are included in this ordering, with rarity keys breaking ties; Steamodded does not define a universal quality rank for custom rarities. Saved bounds use rarity keys so adding mods does not shift them to unrelated tiers; the outermost bounds stay open to new rarities.
 
@@ -35,7 +35,7 @@ Weighted rolls preserve relative rarity weights within the selected range. Rarit
 
 ## Install guide
 
-Requires [Steamodded](https://github.com/Steamodded/smods) 1.0 or later.
+Requires [Steamodded](https://github.com/Steamodded/smods) 26.829.0 or later (for the dropdown controls).
 
 Download the whole repo as a .zip file and un-zip it in your mods folder. More information in the Steamodded link above.
 

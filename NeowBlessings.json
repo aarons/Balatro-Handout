@@ -10,6 +10,6 @@
     "priority": 100,
     "version": "2.0.1",
     "dependencies": [
-        "Steamodded (>=1.0.0~ALPHA-0812d)"
+        "Steamodded (>=26.829.0)"
     ]
 }

@@ -88,8 +88,8 @@ Event = function(args) return args end
 G.E_MANAGER = { add_event = function(self, event) assert(event.func()) end }
 create_option_cycle = function(args) return { config = args } end
 create_toggle = create_option_cycle
--- Keep this test focused on type cycles; rarity sliders have their own suite.
-create_slider = function() return { config = {} } end
+-- Keep this test focused on type cycles; rarity dropdowns have their own suite.
+SMODS.GUI = { dropdown_select = function() return { config = {} } end }
 
 dofile('neow_blessings.lua')
 
