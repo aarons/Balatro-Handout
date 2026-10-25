@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="neow test ")
+        self.temp = tempfile.TemporaryDirectory(prefix="handout test ")
         self.addCleanup(self.temp.cleanup)
         self.mods = Path(self.temp.name) / "Mods"
         self.mods.mkdir()
-        self.dest = self.mods / "NeowBlessings"
+        self.dest = self.mods / "handout"
 
     def run_installer(self, *args, script=None):
         return subprocess.run(
@@ -56,6 +56,51 @@ class InstallerTests(unittest.TestCase):
         for args in ((), ("--uninstall",)):
             self.assertNotEqual(self.run_installer(*args).returncode, 0)
             self.assertEqual(sentinel.read_text(), "keep")
+
+    def test_migrates_legacy_handout_with_or_without_current_install(self):
+        for current_exists in (False, True):
+            with self.subTest(current_exists=current_exists):
+                legacy = self.mods / "NeowBlessings"
+                legacy.mkdir()
+                (legacy / "NeowBlessings.json").write_bytes(
+                    (ROOT / "NeowBlessings.json").read_bytes())
+                self.assertEqual(self.dest.exists(), current_exists)
+                self.assertEqual(self.run_installer().returncode, 0)
+                self.assertFalse(legacy.exists())
+                self.assertEqual((self.dest / "neow_blessings.lua").read_bytes(),
+                                 (ROOT / "neow_blessings.lua").read_bytes())
+
+    def test_uninstalls_legacy_handout(self):
+        legacy = self.mods / "NeowBlessings"
+        legacy.mkdir()
+        (legacy / "NeowBlessings.json").write_bytes(
+            (ROOT / "NeowBlessings.json").read_bytes())
+        self.assertEqual(self.run_installer("--uninstall").returncode, 0)
+        self.assertFalse(legacy.exists())
+
+    def test_preserves_original_mod_in_legacy_folder(self):
+        legacy = self.mods / "NeowBlessings"
+        legacy.mkdir()
+        metadata = legacy / "NeowBlessings.json"
+        original = '{"id": "NeowBlessings", "name": "Neow Blessings"}'
+        metadata.write_text(original)
+        for args in ((), ("--uninstall",)):
+            self.assertNotEqual(self.run_installer(*args).returncode, 0)
+            self.assertEqual(metadata.read_text(), original)
+            self.assertFalse(self.dest.exists())
+
+    def test_refuses_legacy_symlink_and_source_checkout(self):
+        legacy = self.mods / "NeowBlessings"
+        legacy.symlink_to(ROOT, target_is_directory=True)
+        for args in ((), ("--uninstall",)):
+            self.assertNotEqual(self.run_installer(*args).returncode, 0)
+        legacy.unlink()
+        legacy.mkdir()
+        script = legacy / "install.sh"
+        script.write_bytes((ROOT / "install.sh").read_bytes())
+        for args in ((), ("--uninstall",)):
+            self.assertNotEqual(self.run_installer(*args, script=script).returncode, 0)
+            self.assertTrue(script.exists())
 
     def test_refuses_symlink_and_source_checkout(self):
         self.dest.symlink_to(ROOT, target_is_directory=True)

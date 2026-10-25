@@ -28,24 +28,32 @@ if [[ ! -d "$MODS_DIR" ]]; then
 fi
 
 MODS_DIR="$(cd "$MODS_DIR" && pwd -P)"
-DEST="$MODS_DIR/NeowBlessings"
-if [[ -L "$DEST" || "$SRC" == "$DEST" || "$SRC" == "$DEST/"* ]]; then
-    echo "Refusing to modify a symlink or the source checkout: $DEST" >&2
-    exit 1
-fi
-if [[ -e "$DEST" ]] && { [[ ! -f "$DEST/NeowBlessings.json" ]] ||
-    ! grep -Eq '"id"[[:space:]]*:[[:space:]]*"NeowBlessings"' "$DEST/NeowBlessings.json"; }; then
-    echo "Refusing to modify an unrecognized installation: $DEST" >&2
-    exit 1
-fi
+DEST="$MODS_DIR/handout"
+LEGACY_DEST="$MODS_DIR/NeowBlessings"
+# Check both locations before making changes. The old ID is retained for saved
+# settings, but the name distinguishes Handout from the original Neow mod.
+for target in "$DEST" "$LEGACY_DEST"; do
+    if [[ -L "$target" || "$SRC" == "$target" || "$SRC" == "$target/"* ]]; then
+        echo "Refusing to modify a symlink or the source checkout: $target" >&2
+        exit 1
+    fi
+    if [[ -e "$target" ]] && { [[ ! -f "$target/NeowBlessings.json" ]] ||
+        ! grep -Eq '"id"[[:space:]]*:[[:space:]]*"NeowBlessings"' "$target/NeowBlessings.json" ||
+        ! grep -Eq '"name"[[:space:]]*:[[:space:]]*"Handout"' "$target/NeowBlessings.json"; }; then
+        echo "Refusing to modify an unrecognized installation: $target" >&2
+        exit 1
+    fi
+done
 
 if [[ "$ACTION" == uninstall ]]; then
-    if [[ -d "$DEST" ]]; then
-        rm -rf -- "$DEST"
-        echo "Uninstalled from $DEST — restart Balatro to pick up changes."
-    else
-        echo "Not installed: $DEST"
-    fi
+    for target in "$DEST" "$LEGACY_DEST"; do
+        if [[ -d "$target" ]]; then
+            rm -rf -- "$target"
+            echo "Uninstalled from $target — restart Balatro to pick up changes."
+        else
+            echo "Not installed: $target"
+        fi
+    done
     exit 0
 fi
 
@@ -60,5 +68,11 @@ rsync -a --delete \
     --include '/icon.png' \
     --exclude '*' \
     "$SRC/" "$DEST/"
+
+# Remove the previous Handout copy only after the new installation succeeds.
+if [[ -d "$LEGACY_DEST" ]]; then
+    rm -rf -- "$LEGACY_DEST"
+    echo "Migrated previous installation from $LEGACY_DEST."
+fi
 
 echo "Installed to $DEST — restart Balatro to pick up changes."

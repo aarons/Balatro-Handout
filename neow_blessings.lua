@@ -27,6 +27,23 @@ local TYPE_OPTIONS = { 1, 3, 4, 5, 6, 7 }
 -- 'random' resolves to one of these at run start; 'none' is excluded.
 local RANDOM_TYPES = { 'consumable', 'joker', 'booster', 'voucher' }
 
+local function selection_limit()
+    local enabled = 0
+    for slot = 1, 5 do
+        local kind = TYPE_KEYS[config['slot_type_' .. slot]]
+        if kind and kind ~= 'none' then enabled = enabled + 1 end
+    end
+    return math.max(1, enabled)
+end
+
+local function selection_count()
+    return math.min(copy_count(config.selections), selection_limit())
+end
+
+G.FUNCS.nb_selections = function()
+    config.selections = selection_count()
+end
+
 local VANILLA_RARITIES = { Common = 1, Uncommon = 2, Rare = 3, Legendary = 4 }
 
 -- Steamodded has no universal quality rank for custom rarities. Order the
@@ -107,6 +124,7 @@ end
 
 G.FUNCS.nb_slot_type = function(args)
     config['slot_type_' .. args.cycle_config.nb_slot] = TYPE_OPTIONS[args.to_key]
+    config.selections = selection_count()
 end
 
 SMODS.current_mod.config_tab = function()
@@ -122,6 +140,18 @@ SMODS.current_mod.config_tab = function()
     }}
     rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
         {n = G.UIT.T, config = { text = localize('nb_copies_info'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT }},
+    }}
+    config.selections = selection_count()
+    rows[#rows + 1] = {n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+        {n = G.UIT.T, config = { text = localize('nb_selections'), scale = 0.35, colour = G.C.UI.TEXT_LIGHT }},
+        SMODS.GUI.dropdown_select {
+            options = { 1, 2, 3, 4, 5 }, ref_table = config, ref_value = 'selections',
+            callback = 'nb_selections', no_unselect = true, close_on_select = true,
+            minw = 1, scale = 0.35,
+            display_choice_func = tostring,
+            is_option_disabled = function(value) return value > selection_limit() end,
+        },
+        create_toggle { label = localize('nb_force_editions'), ref_table = config, ref_value = 'force_editions' },
     }}
     for i = 1, 5 do
         local current_option = 1
@@ -324,19 +354,19 @@ local function has_room(area, buffer)
     return #area.cards + (buffer or 0) < area.config.card_limit
 end
 
-local function add_joker(key)
+local function add_joker(key, edition)
     if not has_room(G.jokers, G.GAME.joker_buffer) then return end
-    local card = SMODS.add_card { set = 'Joker', key = key }
+    local card = SMODS.add_card { set = 'Joker', key = key, edition = edition }
     if card then
         card:start_materialize()
         G.GAME.used_jokers[key] = true
     end
 end
 
-local function add_consumable(key)
+local function add_consumable(key, edition)
     if not has_room(G.consumeables, G.GAME.consumeable_buffer) then return end
     local center = G.P_CENTERS[key]
-    local card = SMODS.add_card { set = center.set, key = key }
+    local card = SMODS.add_card { set = center.set, key = key, edition = edition }
     if card then
         card:start_materialize()
         G.GAME.used_jokers[key] = true
@@ -358,7 +388,9 @@ local end_consumeable_ref = G.FUNCS.end_consumeable
 G.FUNCS.end_consumeable = function(e, delayfac)
     local result = end_consumeable_ref(e, delayfac)
     local pending = pending_boosters
-    if pending and not pending.waiting then
+    if pending and not pending.waiting and #pending.queue == 0 then
+        pending_boosters = nil
+    elseif pending and not pending.waiting then
         pending.waiting = true
         G.E_MANAGER:add_event(Event({
             trigger = 'after', delay = 1.1 * (delayfac or 1),
@@ -366,10 +398,10 @@ G.FUNCS.end_consumeable = function(e, delayfac)
             func = function()
                 if pending_boosters ~= pending then return true end
                 if G.GAME.PACK_INTERRUPT or G.booster_pack then return false end
-                pending.remaining = pending.remaining - 1
+                local center = table.remove(pending.queue, 1)
                 pending.waiting = false
-                if pending.remaining == 0 then pending_boosters = nil end
-                open_booster(pending.center)
+                if #pending.queue == 0 then pending_boosters = nil end
+                open_booster(center)
                 return true
             end,
         }))
@@ -378,8 +410,10 @@ G.FUNCS.end_consumeable = function(e, delayfac)
 end
 
 local function open_boosters(center, copies)
-    if copies > 1 then pending_boosters = { center = center, remaining = copies - 1 } end
-    open_booster(center)
+    local active = pending_boosters ~= nil
+    pending_boosters = pending_boosters or { queue = {} }
+    for _ = 1, copies do table.insert(pending_boosters.queue, center) end
+    if not active then open_booster(table.remove(pending_boosters.queue, 1)) end
 end
 
 local function redeem_voucher(center)
@@ -418,18 +452,20 @@ local function resolve_blessings()
             if key then
                 rolled[key] = true
                 local center = G.P_CENTERS[key]
+                local edition = config.force_editions and SMODS.poll_edition { key = seed .. '_edition', guaranteed = true } or nil
                 blessings[#blessings + 1] = {
-                    center = center,
-                    f = function() for _ = 1, copies do add_consumable(key) end end
+                    center = center, edition = edition,
+                    f = function() for _ = 1, copies do add_consumable(key, edition) end end
                 }
             end
         elseif _type == 'joker' then
             local key = poll_joker(uniform, seed, rolled)
             if key then
                 rolled[key] = true
+                local edition = config.force_editions and SMODS.poll_edition { key = seed .. '_edition', guaranteed = true } or nil
                 blessings[#blessings + 1] = {
-                    center = G.P_CENTERS[key],
-                    f = function() for _ = 1, copies do add_joker(key) end end
+                    center = G.P_CENTERS[key], edition = edition,
+                    f = function() for _ = 1, copies do add_joker(key, edition) end end
                 }
             end
         elseif _type == 'booster' then
@@ -457,30 +493,59 @@ end
 
 -- Use real Cards so vanilla and modded art, animations, and descriptions
 -- behave just like the collection. These previews never enter the deck.
+G.FUNCS.nb_done = function(e)
+    e.config.ref_table.finish()
+end
+
 local function create_blessings_overlay(blessings)
     G.SETTINGS.paused = true
     local area = CardArea(G.ROOM.T.x, G.ROOM.T.y,
         ((#blessings - 1) * 1.4 + 1.27) * G.CARD_W, G.CARD_H * 1.5,
         { card_limit = #blessings, type = 'title', highlight_limit = 0,
             card_w = G.CARD_W * 1.27 })
-    local chosen = false
+    local chosen, selected = false, {}
+    local remaining = math.min(selection_count(), #blessings)
+    local status = { text = localize('nb_choose') .. ' ' .. remaining }
     local overlay
+    local function finish()
+        if chosen or not overlay or G.OVERLAY_MENU ~= overlay then return end
+        chosen = true
+        -- Remove every preview and unpause before applying the rewards,
+        -- especially when a booster opens its own selection screen.
+        G.FUNCS.exit_overlay_menu()
+        -- Apply other rewards before packs take over the game UI.
+        for _, reward in ipairs(selected) do
+            if reward.center.set ~= 'Booster' then reward.f() end
+        end
+        for _, reward in ipairs(selected) do
+            if reward.center.set == 'Booster' then reward.f() end
+        end
+    end
     for _, blessing in ipairs(blessings) do
         local scale = blessing.center.set == 'Booster' and 1.27 or 1
         local card = Card(area.T.x, area.T.y, G.CARD_W * scale, G.CARD_H * scale,
             G.P_CARDS.empty, blessing.center, {
                 bypass_discovery_center = true, bypass_discovery_ui = true, bypass_lock = true,
             })
+        if blessing.edition then card:set_edition(blessing.edition, true, true) end
         card.states.drag.can = false
         -- Mouse clicks and controller confirmation both use Card:click.
         -- Keep this override local to the preview, leaving normal cards alone.
         card.click = function()
-            if chosen or not overlay or G.OVERLAY_MENU ~= overlay then return end
-            chosen = true
-            -- Remove every preview and unpause before applying the reward,
-            -- especially when a booster opens its own selection screen.
-            G.FUNCS.exit_overlay_menu()
-            blessing.f()
+            if chosen or card.nb_selected or not overlay or G.OVERLAY_MENU ~= overlay then return end
+            card.nb_selected = true
+            -- Preview highlighting must not create live Use/Sell buttons.
+            card.highlighted = true
+            selected[#selected + 1] = blessing
+            remaining = remaining - 1
+            status.text = localize('nb_choose') .. ' ' .. remaining
+            if remaining > 0 then
+                for _, next_card in ipairs(area.cards) do
+                    if not next_card.nb_selected then G.CONTROLLER:snap_to { node = next_card }; break end
+                end
+                return
+            end
+            finish()
         end
         area:emplace(card)
     end
@@ -490,6 +555,11 @@ local function create_blessings_overlay(blessings)
             no_back = true,
             contents = {
                 {n = G.UIT.O, config = { object = area }},
+                {n = G.UIT.R, config = { align = 'cm' }, nodes = {
+                    {n = G.UIT.T, config = { ref_table = status, ref_value = 'text', scale = 0.4, colour = G.C.UI.TEXT_LIGHT }},
+                }},
+                UIBox_button { label = { localize('nb_done') }, button = 'nb_done',
+                    ref_table = { finish = finish }, minw = 2.5 },
             },
         },
         config = { no_esc = true }

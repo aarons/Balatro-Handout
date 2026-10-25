@@ -29,6 +29,8 @@ Card = function(x, y, w, h, base, center, params)
         T = { x = x, y = y, w = w, h = h }, config = { center = center }, params = params,
         created_on_pause = G.SETTINGS.paused,
         states = { drag = { can = true }, click = { can = true }, hover = { can = true } },
+        highlight = function() error('previews must not create Use/Sell buttons') end,
+        set_edition = function(self, edition) self.edition = edition end,
         remove = function(self) live_previews[self] = nil; self.removed = true end,
         start_materialize = function() end, start_dissolve = function() end,
         redeem = function() award('Voucher') end,
@@ -51,7 +53,7 @@ SMODS = {
     ConsumableType = { obj_table = { Tarot = {} } },
     add_card = function(args)
         award(args.set)
-        local card = { key = args.key, start_materialize = function() end }
+        local card = { key = args.key, edition = args.edition, start_materialize = function() end }
         local area = args.set == 'Joker' and G.jokers or G.consumeables
         area.cards[#area.cards + 1] = card
         return card
@@ -71,11 +73,14 @@ pseudorandom_element = function(pool, seed)
 end
 get_current_pool = function(kind) return { kind == 'Joker' and 'j_test' or 'c_test' } end
 create_UIBox_generic_options = function(args) return args end
+UIBox_button = function(args) return { config = args } end
 G.FUNCS.overlay_menu = function(args)
     if G.OVERLAY_MENU then G.OVERLAY_MENU.area:remove() end
     assert(args.config.no_esc and args.definition.no_back)
-    assert(#args.definition.contents == 1 and args.definition.contents[1].n == G.UIT.O)
-    G.OVERLAY_MENU = { area = args.definition.contents[1].config.object }
+    assert(#args.definition.contents == 3 and args.definition.contents[1].n == G.UIT.O)
+    local done = args.definition.contents[3]
+    assert(done.config.button == 'nb_done' and done.config.label[1] == 'nb_done')
+    G.OVERLAY_MENU = { area = args.definition.contents[1].config.object, done = done }
 end
 G.FUNCS.exit_overlay_menu = function()
     G.OVERLAY_MENU.area:remove()
@@ -117,9 +122,11 @@ end
 G.GAME.used_jokers = {}
 Game:start_run({})
 local old_card = G.OVERLAY_MENU.area.cards[1]
+local old_done = G.OVERLAY_MENU.done
 Game:start_run({})
 local current = G.OVERLAY_MENU
 old_card:click()
+G.FUNCS.nb_done(old_done)
 assert(old_card.removed and G.OVERLAY_MENU == current)
 G.FUNCS.exit_overlay_menu()
 
@@ -245,3 +252,105 @@ Game:start_run({ savetext = 'saved run' })
 local before = #rewards
 assert(stale.func() and #rewards == before, 'new or loaded runs cancel stale pack events')
 print('Overlay tests passed: card previews, all rewards, cleanup, saved runs, retired Money, and config IDs')
+
+-- Distinct selections wait for the final choice and ignore repeated clicks.
+config.selections, config.copies = 3, 1
+config.slot_type_1, config.slot_type_2, config.slot_type_3 = 3, 4, 5
+config.slot_type_4, config.slot_type_5 = 1, 1
+G.GAME.used_jokers = {}
+G.jokers.cards, G.consumeables.cards = {}, {}
+G.jokers.config.card_limit, G.consumeables.config.card_limit = 10, 10
+Game:start_run({})
+local area = G.OVERLAY_MENU.area
+local before = #rewards
+area.cards[1]:click()
+area.cards[1]:click()
+assert(#rewards == before and G.OVERLAY_MENU and area.cards[1].highlighted)
+assert(G.CONTROLLER.target == area.cards[2])
+area.cards[2]:click()
+assert(#rewards == before and G.OVERLAY_MENU)
+area.cards[3]:click()
+assert(#rewards == before + 3 and not G.OVERLAY_MENU)
+
+-- Done forfeits unused picks, including all picks, without changing the limit.
+config.selections = 2
+for _, pick in ipairs({ 0, 1, 3 }) do
+    G.GAME.used_jokers = {}
+    Game:start_run({})
+    local area, done = G.OVERLAY_MENU.area, G.OVERLAY_MENU.done
+    local before = #rewards
+    if pick > 0 then area.cards[pick]:click() end
+    assert(#rewards == before and G.OVERLAY_MENU)
+    G.FUNCS.nb_done(done)
+    assert(not G.OVERLAY_MENU and not G.SETTINGS.paused)
+    assert(next(live_previews) == nil)
+    assert(#rewards == before + (pick > 0 and 1 or 0))
+    if pick > 0 then assert(rewards[#rewards] == (pick == 3 and 'Booster' or 'Tarot')) end
+    G.FUNCS.nb_done(done)
+    for _, card in ipairs(area.cards) do card:click() end
+    assert(#rewards == before + (pick > 0 and 1 or 0), 'Done must only claim once')
+    assert(config.selections == 2, 'forfeiting does not change future runs')
+end
+config.selections = 3
+
+-- Clamp to resolved rewards when enabled pools are empty.
+G.GAME.used_jokers = { j_test = true }
+Game:start_run({})
+assert(#G.OVERLAY_MENU.area.cards == 2)
+local area = G.OVERLAY_MENU.area
+area.cards[1]:click(); area.cards[2]:click()
+assert(not G.OVERLAY_MENU)
+G.FUNCS.nb_slot_type { cycle_config = { nb_slot = 3 }, to_key = 1 }
+assert(config.selections == 2)
+G.FUNCS.nb_slot_type { cycle_config = { nb_slot = 2 }, to_key = 1 }
+assert(config.selections == 1)
+
+-- Different pack selections and their copies share one sequential queue.
+config.slot_type_1, config.slot_type_2 = 5, 5
+config.selections, config.copies = 2, 2
+local pack_keys = {}
+G.FUNCS.use_card = function(e)
+    award('Booster')
+    pack_keys[#pack_keys + 1] = e.config.ref_table.config.center.key
+end
+Game:start_run({})
+local area = G.OVERLAY_MENU.area
+area.cards[1]:click(); area.cards[2]:click()
+assert(#pack_keys == 1)
+for i = 2, 4 do
+    G.FUNCS.end_consumeable()
+    assert(#events == 1)
+    assert(table.remove(events, 1).func())
+    assert(#pack_keys == i)
+end
+assert(pack_keys[1] == pack_keys[2] and pack_keys[3] == pack_keys[4])
+assert(pack_keys[1] ~= pack_keys[3])
+G.FUNCS.end_consumeable()
+assert(#events == 0)
+
+-- Guaranteed editions are seeded per slot, previewed, and kept on all copies.
+config.force_editions, config.selections = true, 1
+local polls = 0
+SMODS.poll_edition = function(args)
+    assert(args.guaranteed and args.key:match('^neow_.*_edition$'))
+    polls = polls + 1
+    return 'e_modded_test'
+end
+for _, kind in ipairs({ 3, 4 }) do
+    for i = 1, 5 do config['slot_type_' .. i] = 1 end
+    config.slot_type_1, config.copies = kind, 2
+    G.GAME.used_jokers = {}
+    G.jokers.cards, G.consumeables.cards = {}, {}
+    Game:start_run({})
+    local preview = G.OVERLAY_MENU.area.cards[1]
+    assert(preview.edition == 'e_modded_test')
+    preview:click()
+    local target = kind == 4 and G.jokers or G.consumeables
+    assert(#target.cards == 2)
+    for _, card in ipairs(target.cards) do assert(card.edition == 'e_modded_test') end
+end
+assert(polls == 2)
+assert(claim(5, 1) == 1 and polls == 2, 'packs do not receive editions')
+config.force_editions = false
+assert(claim(4, 1) == 1 and polls == 2, 'disabled preserves normal creation')
+print('Selection and edition tests passed')

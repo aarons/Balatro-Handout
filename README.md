@@ -8,7 +8,7 @@ Created and maintained by **aarons**. [NeowBlessings](https://github.com/kjossul
 
 ## Starting rewards
 
-At the start of every run, choose one reward from a horizontal row of cards using the game's own art. Hover or focus a card to see its description, then click or confirm with a controller to claim it. There is no opening character card or dialogue. By default, the four choices are:
+At the start of every run, choose rewards from a horizontal row of cards using the game's own art. Hover or focus a card to see its description, then click or confirm with a controller to claim it. There is no opening character card or dialogue. By default, the four choices are:
 
 - **A random Consumable** — a Tarot, Planet, or Spectral card (or any modded consumable type), added to your consumables area
 - **A random Joker** — rolled from the full joker pool with rarity odds respected, e.g. "Burnt Joker"
@@ -25,7 +25,11 @@ Configure up to five reward slots in **Mods > Handout > Config**: None, Consumab
 - Booster pack: weighted (shop weights)
 - Consumable: uniform — note that in weighted mode, Spectral cards match the shop rate, which is 0 outside the Ghost deck
 
-**Copies** sets how many copies of your selected blessing you receive, from **1–5** (default **1**). Each copy uses the same selected card. Jokers and consumables fill only the slots available under your deck's current limits, accounting for starting cards; excess copies are skipped. Booster copies open one at a time, continuing after you finish or skip each pack. Voucher copies redeem the same voucher repeatedly; the resulting benefit depends on the voucher's effect.
+**Selections** sets the maximum number of distinct rewards you can choose (default **1**), up to **min(5, enabled slots)**. Click **Done** to claim your selected rewards early and forfeit any remaining picks, or to skip all rewards. Using every pick claims the rewards automatically. The run also caps this at the number of rewards actually available if a pool is empty. Selected cards are highlighted and cannot be picked twice. With all slots disabled, the run starts normally.
+
+**Force editions** (default **off**) guarantees a random edition on direct Joker and consumable rewards, including Polychrome, Foil, Holographic, Negative, and eligible modded editions. It uses Steamodded's live edition pool and guaranteed weighted roll, so editions excluded from that pool by their mods are not forced. The preview shows the edition; every copy keeps it. This does not modify vouchers, booster packs, or cards inside packs. Balatro calls these modifiers *editions*; playing-card enhancements such as Bonus and Steel are a separate system.
+
+**Copies** sets how many copies of your selected reward you receive, from **1–5** (default **1**). Each copy uses the same selected card. Jokers and consumables fill only the slots available under your deck's current limits, accounting for starting cards; excess copies are skipped. Booster copies open one at a time, continuing after you finish or skip each pack. Voucher copies redeem the same voucher repeatedly; the resulting benefit depends on the voucher's effect.
 
 The **Minimum Joker rarity** and **Maximum Joker rarity** dropdowns set one inclusive range for all Joker reward slots, including Random Choice slots that roll a Joker. Both default to the full range; the maximum displays **Unlimited**, including Legendary and modded rarities even when they cannot appear in shops. Set both to the same rarity to offer only that tier. Options outside the other bound are disabled so the minimum cannot exceed the maximum.
 
@@ -46,21 +50,23 @@ For local playtesting on macOS, run from this checkout:
 ./install.sh --uninstall
 ```
 
-The installer copies runtime files into `~/Library/Application Support/Balatro/Mods/NeowBlessings`. Run it again after editing the mod, then restart Balatro. Steamodded must already be installed and the Mods folder must exist. To use another installation or platform, set the Mods directory explicitly (requires Bash and rsync):
+The installer copies runtime files into `~/Library/Application Support/Balatro/Mods/handout`. Run it again after editing the mod, then restart Balatro. Steamodded must already be installed and the Mods folder must exist. To use another installation or platform, set the Mods directory explicitly (requires Bash and rsync):
 
 ```sh
 BALATRO_MODS_DIR="/path/to/Balatro/Mods" ./install.sh
 BALATRO_MODS_DIR="/path/to/Balatro/Mods" ./install.sh --uninstall
 ```
 
-For upgrade compatibility, Handout retains the internal `NeowBlessings` mod ID and installation folder, the `neow` prefix, and existing random seeds. Saved settings continue to work; the in-game name is Handout.
+For upgrade compatibility, Handout retains the internal `NeowBlessings` mod ID, the `neow` prefix, and existing random seeds. Saved settings continue to work; the in-game name is Handout.
 
-Uninstall removes only the `NeowBlessings` installation folder. Steamodded's saved preferences and your game saves are preserved.
+The installer migrates an existing Handout installation from `NeowBlessings` to `handout`, removing the old copy after a successful install. It refuses to overwrite an unrecognized folder or an installation of the original Neow Blessings mod.
+
+Uninstall removes the `handout` installation folder and any recognized legacy Handout installation in `NeowBlessings`. Steamodded's saved preferences and your game saves are preserved.
 
 Run the automated checks with `lua tests/test_rarity.lua`, `lua tests/test_overlay.lua`, and `python3 -m unittest discover -s tests`.
 
 ## Future development
-- Come up with blessings that give a drawback but also a big bonus, like in StS Curse for a Rare Colorless card, etc.
+- Come up with rewards that give a drawback but also a big bonus, like in StS Curse for a Rare Colorless card, etc.
 - Balance and playtesting
 
 ## Screenshots (previous interface)

@@ -2,6 +2,10 @@ return {
     misc = {
         dictionary = {
             nb_blessing = "Reward",
+            nb_selections = "Selections",
+            nb_choose = "Picks remaining:",
+            nb_done = "Done",
+            nb_force_editions = "Force editions",
             nb_copies = "Copies",
             nb_copies_info = "Jokers and consumables fill only available slots.",
             nb_uniform = "Uniform roll",
